@@ -4,7 +4,7 @@
 const CONFIG = {
   // Code.gs를 웹앱으로 배포한 뒤 나오는 URL로 교체하세요.
   // 예: https://script.google.com/macros/s/AKfycb.../exec
-  API_URL: 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE',
+  API_URL: 'https://script.google.com/macros/s/AKfycbxxxwG1hJFS9WIuFlbp0831AqvcinaVS51IrYHoBBPwoTV_5wmX4h0c6RN-xm9tBegc_w/exec',
 };
 
 const PERSISTENT_TAGS = ['환우', '타교', 'EM', '타주'];
