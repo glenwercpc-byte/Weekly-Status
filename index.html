@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>주일예배 출석현황 - CCPC</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="topbar">
+  <h1><span class="dot"></span>주일예배 출석현황</h1>
+  <input type="date" id="serviceDate" class="date-input">
+  <input type="text" id="searchBox" class="search" placeholder="이름 검색...">
+  <div class="spacer"></div>
+  <button class="btn" id="refreshSamterBtn">샘터 새로고침</button>
+  <button class="btn" id="syncBtn">서버와 동기화</button>
+  <button class="btn" id="editModeBtn">편집 모드</button>
+  <button class="btn gold" id="newWeekBtn">새 주 시작</button>
+</div>
+
+<div class="summary" id="summaryBar"></div>
+<div class="legend">
+  <b>표시 방법</b> — 칸을 클릭: 빈칸(출석) → ✓ → X(결석) → 직접입력(예: 출타, 한국) → 다시 빈칸.
+  칸을 우클릭하면 바로 출석(빈칸)으로 초기화됩니다.
+  <b>환우·타교·EM·타주</b>는 직접 수정하기 전까지 매주 자동으로 유지됩니다.
+  <span style="color:#95741c">●</span> 표시가 있는 이름은 단독 교인 중 성별 칸(남/여) 확인이 필요합니다.
+</div>
+
+<div class="wrap">
+  <div class="grid" id="gridRoot"></div>
+</div>
+
+<div class="footer-note">
+  이 표는 Google Sheets를 백엔드로 사용합니다 (Code.gs 참고). 여러 관리자가 동시에 열어도 "서버와 동기화" 버튼으로 최신 상태를 다시 불러올 수 있습니다.<br>
+  <b>샘터 새로고침</b>은 <a href="https://glenwercpc-byte.github.io/Cell-Group/" target="_blank">샘터 조직표</a> 사이트 자동 연동을 시도하지만, 그 사이트가 구글 앱스스크립트로 데이터를 나중에 불러오는 방식이라 교차 출처 제한(CORS) 때문에 자동 반영이 안 될 수 있습니다 — 실패 시 편집 모드에서 손으로 고쳐주세요.
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
