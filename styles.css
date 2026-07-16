@@ -116,11 +116,11 @@
   }
   .legend b{color:var(--text)}
 
-  .wrap{padding:10px;}
+  .wrap{padding:12px;}
   .grid{
     display:grid;
     grid-template-columns:repeat(6, minmax(0,1fr));
-    gap:8px;
+    gap:10px;
   }
   @media (max-width:1400px){ .grid{grid-template-columns:repeat(4,minmax(0,1fr));} }
   @media (max-width:1000px){ .grid{grid-template-columns:repeat(3,minmax(0,1fr));} }
@@ -130,52 +130,72 @@
   .block{
     background:var(--card);
     border:1px solid var(--line);
-    border-radius:8px;
+    border-radius:10px;
     overflow:hidden;
   }
-  table{width:100%; border-collapse:collapse; font-size:11px;}
+  table{width:100%; border-collapse:collapse; font-size:12.5px; table-layout:fixed;}
+  colgroup .col-num{width:20px;}
+  colgroup .col-name{width:64px;}
+  colgroup .col-samter{width:28px;}
+  colgroup .col-cell{width:26px;}
   thead th{
     background:var(--navy);
     color:var(--gold-soft);
     font-weight:600;
-    padding:3px 2px;
-    font-size:9.5px;
+    padding:6px 4px;
+    font-size:11px;
     text-align:center;
     position:sticky; top:0;
   }
   tbody tr{border-bottom:1px solid var(--line);}
   tbody tr:nth-child(even){background:#fafaf6;}
   tbody tr.hidden{display:none;}
-  td{padding:2px 2px; text-align:center; vertical-align:middle;}
-  td.num{color:var(--muted); width:18px; font-size:9.5px;}
+  td{padding:5px 3px; text-align:center; vertical-align:middle;}
+  td.num{color:var(--muted); font-size:11px;}
   td.name{
     text-align:left;
-    padding-left:4px;
+    padding-left:5px;
+    padding-right:3px;
     font-weight:500;
-    white-space:nowrap;
+    overflow:hidden;
+  }
+  .nameView{
+    display:flex;
+    align-items:center;
+    width:100%;
+    min-width:0;
+  }
+  .nameText{
     overflow:hidden;
     text-overflow:ellipsis;
-    max-width:1px;
+    white-space:nowrap;
+    min-width:0;
+    flex:1 1 auto;
   }
-  td.name .flag{color:var(--gold); font-size:9px; margin-left:2px; cursor:pointer;}
-  td.samter{width:24px; color:var(--navy); font-weight:600;}
+  .name .flag{
+    color:var(--gold);
+    font-size:10px;
+    margin-left:2px;
+    cursor:pointer;
+    flex:0 0 auto;
+  }
+  td.samter{color:var(--navy); font-weight:600;}
   td.samter input{
-    width:22px; text-align:center; border:1px solid transparent; background:transparent;
-    font-weight:600; color:var(--navy); font-size:10.5px; border-radius:3px;
+    width:24px; text-align:center; border:1px solid transparent; background:transparent;
+    font-weight:600; color:var(--navy); font-size:12px; border-radius:4px;
   }
   .editmode td.samter input{border-color:var(--line); background:#fff;}
   .editmode td.name input{
-    width:100%; border:1px solid var(--line); border-radius:3px; padding:1px 3px; font-size:11px;
+    width:100%; border:1px solid var(--line); border-radius:4px; padding:2px 4px; font-size:12.5px;
   }
-  td.cell{width:22px;}
   .cellbox{
     display:inline-flex;
     align-items:center;
     justify-content:center;
-    width:20px; height:17px;
-    border-radius:4px;
+    width:24px; height:21px;
+    border-radius:5px;
     cursor:pointer;
-    font-size:9.5px;
+    font-size:11px;
     font-weight:700;
     user-select:none;
     border:1px solid transparent;
@@ -184,16 +204,16 @@
   .cellbox.blank:hover{background:#e2e8dc;}
   .cellbox.present{background:#e3f1e9; color:var(--present);}
   .cellbox.absent{background:#fbe7e5; color:var(--absent);}
-  .cellbox.tag{background:#fbf1dc; color:#95741c; font-size:8.5px;}
+  .cellbox.tag{background:#fbf1dc; color:#95741c; font-size:9.5px;}
   .cellbox.hidden-slot{background:transparent; border:none; cursor:default;}
   .cellbox input{
-    width:20px; text-align:center; border:1px solid var(--gold); border-radius:3px;
-    font-size:9px; padding:0; outline:none;
+    width:24px; text-align:center; border:1px solid var(--gold); border-radius:4px;
+    font-size:10px; padding:1px 0; outline:none;
   }
-  .genderPick{display:inline-flex; gap:2px;}
+  .genderPick{display:inline-flex; gap:2px; flex:0 0 auto;}
   .gpBtn{
     border:1px solid var(--gold); background:#fbf4e2; color:#95741c;
-    border-radius:3px; font-size:9px; padding:0 3px; cursor:pointer;
+    border-radius:3px; font-size:10px; padding:1px 4px; cursor:pointer;
   }
   .gpBtn:hover{background:var(--gold-soft);}
 
