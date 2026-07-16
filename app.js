@@ -146,7 +146,7 @@ function rowHTML(m) {
   <tr data-search="${m.name}">
     <td class="num">${m.id}</td>
     <td class="name">
-      <span class="nameView">${m.name}${flag}</span>
+      <span class="nameView"><span class="nameText">${m.name}</span>${flag}</span>
       <input class="nameEdit" style="display:none" data-id="${m.id}" value="${m.name}" placeholder="새 교인 이름">
     </td>
     <td class="samter">
@@ -203,6 +203,9 @@ function renderGrid() {
   root.innerHTML = blocks.map(list => `
     <div class="block">
       <table>
+        <colgroup>
+          <col class="col-num"><col class="col-name"><col class="col-samter"><col class="col-cell"><col class="col-cell">
+        </colgroup>
         <thead><tr><th>#</th><th>이름</th><th>샘터</th><th>남</th><th>여</th></tr></thead>
         <tbody>${list.map(rowHTML).join('')}</tbody>
       </table>
