@@ -92,11 +92,11 @@ function renderSummary() {
   const tagCounts = { 환우: 0, 타교: 0, EM: 0, 타주: 0 };
 
   state.members.forEach(m => {
+    if (!m.name) return; // skip empty placeholder rows (future registrations)
     const single = !m.name.includes('/');
     let slots;
     if (single) {
-      // count whichever column actually has data; default to 여 if both blank
-      const activeSlot = (m.nam && !m.yeo) ? 'nam' : 'yeo';
+      const activeSlot = m.gender === 'nam' ? 'nam' : 'yeo';
       slots = [m[activeSlot]];
     } else {
       slots = [m.nam, m.yeo];
@@ -120,7 +120,10 @@ function renderSummary() {
   `;
 }
 
-function buildCellHTML(memberId, gender, value) {
+function buildCellHTML(memberId, gender, value, hidden) {
+  if (hidden) {
+    return `<span class="cellbox hidden-slot"></span>`;
+  }
   const cls = classifyCell(value);
   const label = value === '' ? '' : value;
   return `<span class="cellbox ${cls}" data-id="${memberId}" data-gender="${gender}">${label}</span>`;
@@ -128,30 +131,74 @@ function buildCellHTML(memberId, gender, value) {
 
 function rowHTML(m) {
   const single = !m.name.includes('/');
-  const flag = single ? `<span class="flag" title="성별 칸 확인 필요">●</span>` : '';
+  const hasName = !!m.name;
+  let flag = '';
+  let namHidden = false, yeoHidden = false;
+
+  if (single && hasName) {
+    flag = `<span class="flag" data-id="${m.id}" title="클릭해서 남/여 선택">●</span>`;
+    if (m.gender === 'nam') yeoHidden = true;
+    else if (m.gender === 'yeo') namHidden = true;
+    // gender === '' (not yet chosen): show both until admin picks one
+  }
+
   return `
   <tr data-search="${m.name}">
     <td class="num">${m.id}</td>
     <td class="name">
       <span class="nameView">${m.name}${flag}</span>
-      <input class="nameEdit" style="display:none" data-id="${m.id}" value="${m.name}">
+      <input class="nameEdit" style="display:none" data-id="${m.id}" value="${m.name}" placeholder="새 교인 이름">
     </td>
     <td class="samter">
       <span class="samterView">${m.samter || ''}</span>
       <input class="samterEdit" style="display:none" data-id="${m.id}" value="${m.samter || ''}" maxlength="6">
     </td>
-    <td class="cell">${buildCellHTML(m.id, 'nam', m.nam)}</td>
-    <td class="cell">${buildCellHTML(m.id, 'yeo', m.yeo)}</td>
+    <td class="cell">${buildCellHTML(m.id, 'nam', m.nam, namHidden)}</td>
+    <td class="cell">${buildCellHTML(m.id, 'yeo', m.yeo, yeoHidden)}</td>
   </tr>`;
 }
 
+function chooseGender(id, newGender) {
+  const m = findMember(id);
+  const oldGender = m.gender || 'yeo';
+  if (oldGender !== newGender) {
+    const val = m[oldGender];
+    m[newGender] = val;
+    m[oldGender] = '';
+    apiUpdateCell(id, newGender, val);
+    apiUpdateCell(id, oldGender, '');
+  }
+  m.gender = newGender;
+  apiUpdateCell(id, 'gender', newGender);
+  renderGrid();
+  renderSummary();
+}
+
+function attachFlagHandlers() {
+  document.querySelectorAll('.flag[data-id]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = el.dataset.id;
+      const pick = document.createElement('span');
+      pick.className = 'genderPick';
+      pick.innerHTML = `<button type="button" class="gpBtn" data-g="nam">남</button><button type="button" class="gpBtn" data-g="yeo">여</button>`;
+      el.replaceWith(pick);
+      pick.querySelectorAll('.gpBtn').forEach(b => {
+        b.addEventListener('click', ev => {
+          ev.stopPropagation();
+          chooseGender(id, b.dataset.g);
+        });
+      });
+    });
+  });
+}
+
 function renderGrid() {
-  const blocks = [
-    state.members.filter(m => m.id >= 1 && m.id <= 50),
-    state.members.filter(m => m.id >= 51 && m.id <= 100),
-    state.members.filter(m => m.id >= 101 && m.id <= 150),
-    state.members.filter(m => m.id >= 151),
-  ];
+  const blocks = [];
+  for (let start = 1; start <= 240; start += 20) {
+    const end = start + 19;
+    blocks.push(state.members.filter(m => m.id >= start && m.id <= end));
+  }
   const root = document.getElementById('gridRoot');
   root.innerHTML = blocks.map(list => `
     <div class="block">
@@ -164,6 +211,7 @@ function renderGrid() {
 
   attachCellHandlers();
   attachEditHandlers();
+  attachFlagHandlers();
   applySearchFilter();
 }
 
@@ -271,6 +319,7 @@ async function loadAndRender() {
     state.date = data.date || '';
     state.members = (data.members || []).map(m => ({
       id: Number(m.id), name: m.name || '', samter: m.samter || '', nam: m.nam || '', yeo: m.yeo || '',
+      gender: m.gender || '',
     }));
     document.getElementById('serviceDate').value = state.date;
     renderGrid();
