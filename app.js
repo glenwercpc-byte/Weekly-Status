@@ -146,12 +146,12 @@ function rowHTML(m) {
   <tr data-search="${m.name}">
     <td class="num">${m.id}</td>
     <td class="name">
-      <span class="nameView"><span class="nameText">${m.name}</span>${flag}</span>
-      <input class="nameEdit" style="display:none" data-id="${m.id}" value="${m.name}" placeholder="새 교인 이름">
+      <span class="nameView" style="display:${editMode ? 'none' : ''}"><span class="nameText">${m.name}</span>${flag}</span>
+      <input class="nameEdit" style="display:${editMode ? '' : 'none'}" data-id="${m.id}" value="${m.name}">
     </td>
     <td class="samter">
-      <span class="samterView">${m.samter || ''}</span>
-      <input class="samterEdit" style="display:none" data-id="${m.id}" value="${m.samter || ''}" maxlength="6">
+      <span class="samterView" style="display:${editMode ? 'none' : ''}">${m.samter || ''}</span>
+      <input class="samterEdit" style="display:${editMode ? '' : 'none'}" data-id="${m.id}" value="${m.samter || ''}" maxlength="6">
     </td>
     <td class="cell">${buildCellHTML(m.id, 'nam', m.nam, namHidden)}</td>
     <td class="cell">${buildCellHTML(m.id, 'yeo', m.yeo, yeoHidden)}</td>
@@ -282,6 +282,41 @@ function onCellClick(e) {
   renderGrid(); renderSummary();
 }
 
+function koreanCompare(a, b) {
+  return a.localeCompare(b, 'ko');
+}
+
+function apiBulkSave(members) {
+  const rows = members.map(m => [m.id, m.name, m.samter, m.nam, m.yeo, m.gender]);
+  return fetch(CONFIG.API_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify({ action: 'bulkset', rows }),
+  });
+}
+
+async function resortRoster() {
+  const named = state.members.filter(m => m.name && m.name.trim() !== '');
+  named.sort((a, b) => koreanCompare(a.name, b.name));
+
+  const newMembers = named.map((m, idx) => Object.assign({}, m, { id: idx + 1 }));
+  const blanksCount = 240 - newMembers.length;
+  for (let i = 0; i < blanksCount; i++) {
+    newMembers.push({ id: newMembers.length + 1, name: '', samter: '', nam: '', yeo: '', gender: '' });
+  }
+
+  state.members = newMembers;
+  renderGrid();
+  renderSummary();
+  showToast('가나다순으로 재정렬했습니다. 저장 중...');
+  try {
+    await apiBulkSave(newMembers);
+    showToast('저장 완료');
+  } catch (err) {
+    showToast('저장 실패: ' + err.message + ' — "서버와 동기화"로 다시 확인해 주세요.');
+  }
+}
+
 function attachEditHandlers() {
   document.querySelectorAll('.nameEdit, .samterEdit').forEach(inp => {
     inp.addEventListener('change', e => {
@@ -289,21 +324,24 @@ function attachEditHandlers() {
       const m = findMember(id);
       const isName = e.target.classList.contains('nameEdit');
       const field = isName ? 'name' : 'samter';
-      m[field] = e.target.value;
-      apiUpdateCell(id, field, e.target.value);
+      const newValue = e.target.value.trim();
+      const isNewRegistration = isName && !m.name && newValue;
+
+      m[field] = newValue;
+
+      if (isNewRegistration) {
+        resortRoster();
+      } else {
+        apiUpdateCell(id, field, newValue);
+      }
     });
   });
 }
 
 function setEditMode(on) {
   editMode = on;
-  document.querySelectorAll('.nameView, .samterView').forEach(el => {
-    el.style.display = on ? 'none' : '';
-  });
-  document.querySelectorAll('.nameEdit, .samterEdit').forEach(el => {
-    el.style.display = on ? '' : 'none';
-  });
   document.getElementById('editModeBtn').textContent = on ? '편집 완료' : '편집 모드';
+  renderGrid();
 }
 
 function applySearchFilter() {
