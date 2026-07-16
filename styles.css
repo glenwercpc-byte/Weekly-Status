@@ -157,7 +157,6 @@
     padding-left:5px;
     padding-right:3px;
     font-weight:500;
-    overflow:hidden;
   }
   .nameView{
     display:flex;
@@ -181,12 +180,15 @@
   }
   td.samter{color:var(--navy); font-weight:600;}
   td.samter input{
-    width:24px; text-align:center; border:1px solid transparent; background:transparent;
-    font-weight:600; color:var(--navy); font-size:12px; border-radius:4px;
+    width:24px; text-align:center; border:1px solid var(--line); background:#fff;
+    font-weight:600; color:var(--navy); font-size:12px; border-radius:4px; outline:none;
   }
-  .editmode td.samter input{border-color:var(--line); background:#fff;}
-  .editmode td.name input{
+  td.name input{
     width:100%; border:1px solid var(--line); border-radius:4px; padding:2px 4px; font-size:12.5px;
+    outline:none; box-sizing:border-box;
+  }
+  td.name input:focus{
+    border-color:var(--gold); box-shadow:0 0 0 1px var(--gold) inset;
   }
   .cellbox{
     display:inline-flex;
