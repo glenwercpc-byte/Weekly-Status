@@ -7,7 +7,7 @@ const CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbxxxwG1hJFS9WIuFlbp0831AqvcinaVS51IrYHoBBPwoTV_5wmX4h0c6RN-xm9tBegc_w/exec',
 };
 
-const PERSISTENT_TAGS = ['환우', '타교', 'EM', '타주'];
+const PERSISTENT_TAGS = ['환우', '타교', 'EM', '타주', '장결'];
 
 let state = { date: '', members: [] }; // members: [{id,name,samter,nam,yeo}]
 let editMode = false;
@@ -89,7 +89,7 @@ function showToast(msg) {
 
 function renderSummary() {
   let presentCount = 0, absentCount = 0;
-  const tagCounts = { 환우: 0, 타교: 0, EM: 0, 타주: 0 };
+  const tagCounts = { 환우: 0, 타교: 0, EM: 0, 타주: 0, 장결: 0 };
 
   state.members.forEach(m => {
     if (!m.name) return; // skip empty placeholder rows (future registrations)
@@ -117,6 +117,7 @@ function renderSummary() {
     <div class="chip">타교 <b>${tagCounts['타교']}</b></div>
     <div class="chip">EM <b>${tagCounts['EM']}</b></div>
     <div class="chip">타주 <b>${tagCounts['타주']}</b></div>
+    <div class="chip">장결 <b>${tagCounts['장결']}</b></div>
   `;
 }
 
@@ -375,7 +376,7 @@ document.getElementById('serviceDate').addEventListener('change', async e => {
 });
 
 document.getElementById('newWeekBtn').addEventListener('click', async () => {
-  const ok = confirm('새 주 출석표를 시작할까요?\n환우·타교·EM·타주 표시는 그대로 유지되고,\n✓ / X / 기타 직접입력(출타,한국 등) 표시만 모두 지워집니다.\n\n(이전 표는 "기록" 시트에 저장됩니다)');
+  const ok = confirm('새 주 출석표를 시작할까요?\n환우·타교·EM·타주·장결 표시는 그대로 유지되고,\n✓ / X / 기타 직접입력(출타,한국 등) 표시만 모두 지워집니다.\n\n(이전 표는 "기록" 시트에 저장됩니다)');
   if (!ok) return;
   try {
     const res = await apiNewWeek();
