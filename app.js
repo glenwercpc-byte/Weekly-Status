@@ -143,7 +143,7 @@ function rowHTML(m) {
   }
 
   return `
-  <tr data-search="${m.name}">
+  <tr>
     <td class="num">${m.id}</td>
     <td class="name">
       <span class="nameView" style="display:${editMode ? 'none' : ''}"><span class="nameText">${m.name}</span>${flag}</span>
@@ -215,7 +215,6 @@ function renderGrid() {
   attachCellHandlers();
   attachEditHandlers();
   attachFlagHandlers();
-  applySearchFilter();
 }
 
 function attachCellHandlers() {
@@ -344,14 +343,6 @@ function setEditMode(on) {
   renderGrid();
 }
 
-function applySearchFilter() {
-  const q = document.getElementById('searchBox').value.trim();
-  document.querySelectorAll('tbody tr').forEach(tr => {
-    if (!q) { tr.classList.remove('hidden'); return; }
-    tr.classList.toggle('hidden', !(tr.dataset.search || '').includes(q));
-  });
-}
-
 // ---------- Init & top bar wiring ----------
 async function loadAndRender() {
   try {
@@ -371,7 +362,6 @@ async function loadAndRender() {
 }
 
 document.getElementById('editModeBtn').addEventListener('click', () => setEditMode(!editMode));
-document.getElementById('searchBox').addEventListener('input', applySearchFilter);
 
 document.getElementById('syncBtn').addEventListener('click', async () => {
   showToast('서버에서 최신 데이터를 불러옵니다...');
@@ -401,8 +391,16 @@ async function apiGetHistory() {
   return jsonp(CONFIG.API_URL + '?action=history');
 }
 
-// Returns the (name, gender-label, applicable-slot) list of "real" attendance
-// slots to track: couples => both nam & yeo; singles => whichever slot is active.
+function formatDateMDY(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [y, m, d] = parts;
+  return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
+}
+
+// Returns the (name, samter, gender-label, applicable-slot) list of "real"
+// attendance slots to track: couples => both nam & yeo; singles => whichever slot is active.
 function getTrackedSlots() {
   const slots = [];
   state.members.forEach(m => {
@@ -410,10 +408,10 @@ function getTrackedSlots() {
     const single = !m.name.includes('/');
     if (single) {
       const activeSlot = m.gender === 'nam' ? 'nam' : 'yeo';
-      slots.push({ id: m.id, name: m.name, slot: activeSlot, label: '' });
+      slots.push({ id: m.id, name: m.name, samter: m.samter || '', slot: activeSlot, label: '' });
     } else {
-      slots.push({ id: m.id, name: m.name, slot: 'nam', label: '(남편)' });
-      slots.push({ id: m.id, name: m.name, slot: 'yeo', label: '(아내)' });
+      slots.push({ id: m.id, name: m.name, samter: m.samter || '', slot: 'nam', label: '(남편)' });
+      slots.push({ id: m.id, name: m.name, samter: m.samter || '', slot: 'yeo', label: '(아내)' });
     }
   });
   return slots;
@@ -428,20 +426,21 @@ function buildWeekLookup(weeks) {
   });
 }
 
-async function computeAbsenceReport() {
+// Every person is assigned to exactly ONE bucket — their longest current
+// consecutive-absence streak — never duplicated across shorter buckets.
+async function computeAllAbsenceReport() {
   const histRes = await apiGetHistory();
   if (histRes.error) throw new Error(histRes.error);
 
   const weeks = (histRes.weeks || []).slice();
-  // add current (unarchived) week using live state
   weeks.push({ date: state.date || '9999-99-99', members: state.members });
   weeks.sort((a, b) => (a.date < b.date ? -1 : (a.date > b.date ? 1 : 0)));
 
   const lookups = buildWeekLookup(weeks); // oldest -> newest
   const slots = getTrackedSlots();
 
-  const results = []; // {name, label, count, lastReason}
-  slots.forEach(({ id, name, slot, label }) => {
+  const results = []; // {name, samter, count, lastReason}
+  slots.forEach(({ id, name, samter, slot, label }) => {
     let count = 0;
     let lastReason = '';
     for (let i = lookups.length - 1; i >= 0; i--) {
@@ -453,14 +452,16 @@ async function computeAbsenceReport() {
       if (!lastReason) lastReason = v || 'X';
     }
     if (count > 0) {
-      results.push({ name: name + (label ? ' ' + label : ''), count, lastReason });
+      results.push({ name: name + (label ? ' ' + label : ''), samter, count, lastReason });
     }
   });
 
   return results;
 }
 
-function renderReport(results) {
+function renderAllAbsenceReport(results) {
+  document.getElementById('reportTitle').textContent = `전체 결석자 명단(${formatDateMDY(state.date)})`;
+
   const groups = { 1: [], 2: [], 3: [], '4+': [] };
   results.forEach(r => {
     const key = r.count >= 4 ? '4+' : String(r.count);
@@ -474,7 +475,7 @@ function renderReport(results) {
     <div class="report-col">
       <h3>${titles[key]} (${groups[key].length}명)</h3>
       ${groups[key].length
-        ? `<ul>${groups[key].map(r => `<li><span class="rname">${r.name}</span><span class="rreason">${r.lastReason}</span></li>`).join('')}</ul>`
+        ? `<ul>${groups[key].map(r => `<li><span class="rname">${r.name} <span class="rsamter">${r.samter}</span></span><span class="rreason">${r.lastReason}</span></li>`).join('')}</ul>`
         : `<div class="report-empty">해당 없음</div>`}
     </div>
   `;
@@ -484,21 +485,93 @@ function renderReport(results) {
       ${['1', '2', '3', '4+'].map(colHTML).join('')}
     </div>
     <div class="report-note">
-      "새 주 시작"으로 보관된 기록(기록 시트)과 이번 주 현재 데이터를 기준으로 계산했습니다.
+      "새 주 시작"으로 보관된 기록(기록 시트)과 이번 주 현재 데이터를 기준으로 계산했습니다. 3주 이상 결석한 사람은 1주·2주 명단에는 중복 표시되지 않고 최종 해당하는 칸에만 한 번 나타납니다.
       기록이 없는 사람(신규 등록 등)은 해당 기간만큼만 계산되며, 자동 기록이 쌓일수록 정확해집니다.
     </div>
   `;
 }
 
-document.getElementById('submitReportBtn').addEventListener('click', async () => {
-  showToast('연속 결석자 명단을 계산 중입니다...');
-  try {
-    const results = await computeAbsenceReport();
-    renderReport(results);
-    document.getElementById('reportOverlay').style.display = 'flex';
-  } catch (err) {
-    showToast('명단 계산 실패: ' + err.message);
+// This-week-only absentees, grouped by 샘터 번호 (ascending).
+function computeBySamterReport() {
+  const groupsMap = {}; // samter -> [ {name, reason} ]
+
+  state.members.forEach(m => {
+    if (!m.name) return;
+    const single = !m.name.includes('/');
+    const samterKey = m.samter && m.samter.trim() !== '' ? m.samter.trim() : '미배정';
+    const checks = single
+      ? [{ slot: m.gender === 'nam' ? 'nam' : 'yeo', label: '' }]
+      : [{ slot: 'nam', label: '(남편)' }, { slot: 'yeo', label: '(아내)' }];
+
+    checks.forEach(({ slot, label }) => {
+      const v = m[slot] || '';
+      if (!isPresentValue(v)) {
+        if (!groupsMap[samterKey]) groupsMap[samterKey] = [];
+        groupsMap[samterKey].push({ name: m.name + (label ? ' ' + label : ''), reason: v || 'X' });
+      }
+    });
+  });
+
+  const keys = Object.keys(groupsMap).filter(k => k !== '미배정');
+  keys.sort((a, b) => Number(a) - Number(b));
+  if (groupsMap['미배정']) keys.push('미배정');
+
+  return keys.map(k => ({
+    samter: k,
+    members: groupsMap[k].sort((a, b) => a.name.localeCompare(b.name, 'ko')),
+  }));
+}
+
+function renderBySamterReport(groups) {
+  document.getElementById('reportTitle').textContent = `샘터별 결석자 명단(${formatDateMDY(state.date)})`;
+
+  const colHTML = g => `
+    <div class="report-col">
+      <h3>${g.samter === '미배정' ? '샘터 미배정' : g.samter + '샘터'} 결석 명단 (${g.members.length}명)</h3>
+      <ul>${g.members.map(r => `<li><span class="rname">${r.name}</span><span class="rreason">${r.reason}</span></li>`).join('')}</ul>
+    </div>
+  `;
+
+  if (!groups.length) {
+    document.getElementById('reportBody').innerHTML = `<div class="report-empty">이번 주 결석자가 없습니다.</div>`;
+    return;
   }
+
+  document.getElementById('reportBody').innerHTML = `
+    <div class="report-columns">${groups.map(colHTML).join('')}</div>
+    <div class="report-note">이번 주(${formatDateMDY(state.date)}) 현재 데이터를 기준으로 샘터 번호 순으로 정리했습니다.</div>
+  `;
+}
+
+// ---------- dropdown menu ----------
+const reportDropdown = document.getElementById('reportDropdown');
+const reportMenu = document.getElementById('reportMenu');
+
+document.getElementById('submitReportBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  reportMenu.style.display = reportMenu.style.display === 'none' ? 'block' : 'none';
+});
+document.addEventListener('click', () => { reportMenu.style.display = 'none'; });
+
+reportMenu.querySelectorAll('.dropdown-item').forEach(btn => {
+  btn.addEventListener('click', async e => {
+    e.stopPropagation();
+    reportMenu.style.display = 'none';
+    const type = btn.dataset.report;
+    showToast('명단을 계산 중입니다...');
+    try {
+      if (type === 'all') {
+        const results = await computeAllAbsenceReport();
+        renderAllAbsenceReport(results);
+      } else if (type === 'bysamter') {
+        const groups = computeBySamterReport();
+        renderBySamterReport(groups);
+      }
+      document.getElementById('reportOverlay').style.display = 'flex';
+    } catch (err) {
+      showToast('명단 계산 실패: ' + err.message);
+    }
+  });
 });
 
 document.getElementById('reportCloseBtn').addEventListener('click', () => {
