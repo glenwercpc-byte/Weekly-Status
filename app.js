@@ -397,14 +397,115 @@ document.getElementById('newWeekBtn').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('refreshSamterBtn').addEventListener('click', async () => {
-  showToast('샘터 조직표 사이트에 접속을 시도합니다...');
+async function apiGetHistory() {
+  return jsonp(CONFIG.API_URL + '?action=history');
+}
+
+// Returns the (name, gender-label, applicable-slot) list of "real" attendance
+// slots to track: couples => both nam & yeo; singles => whichever slot is active.
+function getTrackedSlots() {
+  const slots = [];
+  state.members.forEach(m => {
+    if (!m.name) return; // skip blank future-registration rows
+    const single = !m.name.includes('/');
+    if (single) {
+      const activeSlot = m.gender === 'nam' ? 'nam' : 'yeo';
+      slots.push({ id: m.id, name: m.name, slot: activeSlot, label: '' });
+    } else {
+      slots.push({ id: m.id, name: m.name, slot: 'nam', label: '(남편)' });
+      slots.push({ id: m.id, name: m.name, slot: 'yeo', label: '(아내)' });
+    }
+  });
+  return slots;
+}
+
+function buildWeekLookup(weeks) {
+  // weeks: [{date, members:[{id,nam,yeo}, ...]}], returns Map(id -> {nam,yeo}) per week
+  return weeks.map(w => {
+    const map = {};
+    (w.members || []).forEach(m => { map[String(m.id)] = m; });
+    return { date: w.date, map };
+  });
+}
+
+async function computeAbsenceReport() {
+  const histRes = await apiGetHistory();
+  if (histRes.error) throw new Error(histRes.error);
+
+  const weeks = (histRes.weeks || []).slice();
+  // add current (unarchived) week using live state
+  weeks.push({ date: state.date || '9999-99-99', members: state.members });
+  weeks.sort((a, b) => (a.date < b.date ? -1 : (a.date > b.date ? 1 : 0)));
+
+  const lookups = buildWeekLookup(weeks); // oldest -> newest
+  const slots = getTrackedSlots();
+
+  const results = []; // {name, label, count, lastReason}
+  slots.forEach(({ id, name, slot, label }) => {
+    let count = 0;
+    let lastReason = '';
+    for (let i = lookups.length - 1; i >= 0; i--) {
+      const rec = lookups[i].map[String(id)];
+      if (!rec) break; // no data that far back — stop counting
+      const v = rec[slot] || '';
+      if (isPresentValue(v)) break; // present breaks the streak
+      count++;
+      if (!lastReason) lastReason = v || 'X';
+    }
+    if (count > 0) {
+      results.push({ name: name + (label ? ' ' + label : ''), count, lastReason });
+    }
+  });
+
+  return results;
+}
+
+function renderReport(results) {
+  const groups = { 1: [], 2: [], 3: [], '4+': [] };
+  results.forEach(r => {
+    const key = r.count >= 4 ? '4+' : String(r.count);
+    groups[key].push(r);
+  });
+  Object.keys(groups).forEach(k => groups[k].sort((a, b) => a.name.localeCompare(b.name, 'ko')));
+
+  const titles = { 1: '1주 결석', 2: '2주 연속 결석', 3: '3주 연속 결석', '4+': '4주 이상 연속 결석' };
+
+  const colHTML = key => `
+    <div class="report-col">
+      <h3>${titles[key]} (${groups[key].length}명)</h3>
+      ${groups[key].length
+        ? `<ul>${groups[key].map(r => `<li><span class="rname">${r.name}</span><span class="rreason">${r.lastReason}</span></li>`).join('')}</ul>`
+        : `<div class="report-empty">해당 없음</div>`}
+    </div>
+  `;
+
+  document.getElementById('reportBody').innerHTML = `
+    <div class="report-columns">
+      ${['1', '2', '3', '4+'].map(colHTML).join('')}
+    </div>
+    <div class="report-note">
+      "새 주 시작"으로 보관된 기록(기록 시트)과 이번 주 현재 데이터를 기준으로 계산했습니다.
+      기록이 없는 사람(신규 등록 등)은 해당 기간만큼만 계산되며, 자동 기록이 쌓일수록 정확해집니다.
+    </div>
+  `;
+}
+
+document.getElementById('submitReportBtn').addEventListener('click', async () => {
+  showToast('연속 결석자 명단을 계산 중입니다...');
   try {
-    await fetch('https://glenwercpc-byte.github.io/Cell-Group/', { mode: 'cors' });
-    showToast('사이트 연결은 되었지만, 실제 샘터 번호는 그 사이트가 나중에 자바스크립트로 불러오는 데이터라 이 화면에서 자동으로 읽어올 수 없습니다. 편집 모드에서 직접 수정해 주세요.');
-  } catch (e) {
-    showToast('교차 출처(CORS) 제한으로 자동 연결에 실패했습니다. 편집 모드에서 샘터 번호를 직접 수정해 주세요.');
+    const results = await computeAbsenceReport();
+    renderReport(results);
+    document.getElementById('reportOverlay').style.display = 'flex';
+  } catch (err) {
+    showToast('명단 계산 실패: ' + err.message);
   }
+});
+
+document.getElementById('reportCloseBtn').addEventListener('click', () => {
+  document.getElementById('reportOverlay').style.display = 'none';
+});
+document.getElementById('reportOverlay').addEventListener('click', e => {
+  if (e.target.id === 'reportOverlay') e.target.style.display = 'none';
 });
 
 loadAndRender();
