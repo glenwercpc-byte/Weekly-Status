@@ -2,16 +2,13 @@
 // GitHub Pages(프론트) + Google Apps Script(백엔드, Google Sheets) 구조
 
 const CONFIG = {
-  // Code.gs를 웹앱으로 배포한 뒤 나오는 URL로 교체하세요.
-  // 예: https://script.google.com/macros/s/AKfycb.../exec
   API_URL: 'https://script.google.com/macros/s/AKfycbxxxwG1hJFS9WIuFlbp0831AqvcinaVS51IrYHoBBPwoTV_5wmX4h0c6RN-xm9tBegc_w/exec',
 };
 
 const PERSISTENT_TAGS = ['환우', '타교', 'EM', '타주', '장결'];
 
-let state = { date: '', members: [] }; // members: [{id,name,samter,nam,yeo}]
+let state = { date: '', members: [] }; // members: [{id,name,samter,nam,yeo,gender}]
 let editMode = false;
-let membersById = {};
 
 // ---------- JSONP helper (avoids CORS for GET reads) ----------
 function jsonp(url) {
@@ -67,6 +64,19 @@ async function apiSetDate(dateStr) {
   return jsonp(CONFIG.API_URL + '?action=setdate&date=' + encodeURIComponent(dateStr));
 }
 
+async function apiGetHistory() {
+  return jsonp(CONFIG.API_URL + '?action=history');
+}
+
+function apiBulkSave(members) {
+  const rows = members.map(m => [m.id, m.name, m.samter, m.nam, m.yeo, m.gender]);
+  return fetch(CONFIG.API_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify({ action: 'bulkset', rows }),
+  });
+}
+
 // ---------- Rendering helpers ----------
 function isPresentValue(v) {
   return v === '' || v === '✓';
@@ -92,7 +102,7 @@ function renderSummary() {
   const tagCounts = { 환우: 0, 타교: 0, EM: 0, 타주: 0, 장결: 0 };
 
   state.members.forEach(m => {
-    if (!m.name) return; // skip empty placeholder rows (future registrations)
+    if (!m.name) return; // skip blank future-registration rows
     const single = !m.name.includes('/');
     let slots;
     if (single) {
@@ -195,23 +205,27 @@ function attachFlagHandlers() {
 }
 
 function renderGrid() {
-  const blocks = [];
+  const root = document.getElementById('gridRoot');
+  let html = '';
   for (let start = 1; start <= 240; start += 20) {
     const end = start + 19;
-    blocks.push(state.members.filter(m => m.id >= start && m.id <= end));
+    if (start === 201) {
+      html += `<div class="section-label">EM 멤버 (영어 이름) — 201~240</div>`;
+    }
+    const list = state.members.filter(m => m.id >= start && m.id <= end);
+    html += `
+      <div class="block">
+        <table>
+          <colgroup>
+            <col class="col-num"><col class="col-name"><col class="col-samter"><col class="col-cell"><col class="col-cell">
+          </colgroup>
+          <thead><tr><th>#</th><th>이름</th><th>샘터</th><th>남</th><th>여</th></tr></thead>
+          <tbody>${list.map(rowHTML).join('')}</tbody>
+        </table>
+      </div>
+    `;
   }
-  const root = document.getElementById('gridRoot');
-  root.innerHTML = blocks.map(list => `
-    <div class="block">
-      <table>
-        <colgroup>
-          <col class="col-num"><col class="col-name"><col class="col-samter"><col class="col-cell"><col class="col-cell">
-        </colgroup>
-        <thead><tr><th>#</th><th>이름</th><th>샘터</th><th>남</th><th>여</th></tr></thead>
-        <tbody>${list.map(rowHTML).join('')}</tbody>
-      </table>
-    </div>
-  `).join('');
+  root.innerHTML = html;
 
   attachCellHandlers();
   attachEditHandlers();
@@ -286,31 +300,32 @@ function koreanCompare(a, b) {
   return a.localeCompare(b, 'ko');
 }
 
-function apiBulkSave(members) {
-  const rows = members.map(m => [m.id, m.name, m.samter, m.nam, m.yeo, m.gender]);
-  return fetch(CONFIG.API_URL, {
-    method: 'POST',
-    mode: 'no-cors',
-    body: JSON.stringify({ action: 'bulkset', rows }),
-  });
-}
+// 일반 교인은 1~200번(가나다순), EM(영어이름) 교인은 201~240번(알파벳순)에
+// 따로 분리되어 관리됩니다 — 두 구역은 서로 섞이지 않습니다.
+function resortPartition(startId, endId, compareFn) {
+  const partition = state.members.filter(m => m.id >= startId && m.id <= endId);
+  const others = state.members.filter(m => m.id < startId || m.id > endId);
 
-async function resortRoster() {
-  const named = state.members.filter(m => m.name && m.name.trim() !== '');
-  named.sort((a, b) => koreanCompare(a.name, b.name));
+  const named = partition.filter(m => m.name && m.name.trim() !== '');
+  named.sort((a, b) => compareFn(a.name, b.name));
 
-  const newMembers = named.map((m, idx) => Object.assign({}, m, { id: idx + 1 }));
-  const blanksCount = 240 - newMembers.length;
+  const newPartition = named.map((m, idx) => Object.assign({}, m, { id: startId + idx }));
+  const blanksCount = (endId - startId + 1) - newPartition.length;
   for (let i = 0; i < blanksCount; i++) {
-    newMembers.push({ id: newMembers.length + 1, name: '', samter: '', nam: '', yeo: '', gender: '' });
+    newPartition.push({ id: startId + newPartition.length, name: '', samter: '', nam: '', yeo: '', gender: '' });
   }
 
-  state.members = newMembers;
+  state.members = others.concat(newPartition).sort((a, b) => a.id - b.id);
+  return state.members;
+}
+
+async function resortAndSave(startId, endId, compareFn) {
+  resortPartition(startId, endId, compareFn);
   renderGrid();
   renderSummary();
-  showToast('가나다순으로 재정렬했습니다. 저장 중...');
+  showToast('정렬했습니다. 저장 중...');
   try {
-    await apiBulkSave(newMembers);
+    await apiBulkSave(state.members);
     showToast('저장 완료');
   } catch (err) {
     showToast('저장 실패: ' + err.message + ' — "서버와 동기화"로 다시 확인해 주세요.');
@@ -320,20 +335,27 @@ async function resortRoster() {
 function attachEditHandlers() {
   document.querySelectorAll('.nameEdit, .samterEdit').forEach(inp => {
     inp.addEventListener('change', e => {
-      const id = e.target.dataset.id;
+      const id = Number(e.target.dataset.id);
       const m = findMember(id);
       const isName = e.target.classList.contains('nameEdit');
-      const field = isName ? 'name' : 'samter';
       const newValue = e.target.value.trim();
-      const isNewRegistration = isName && !m.name && newValue;
 
-      m[field] = newValue;
-
-      if (isNewRegistration) {
-        resortRoster();
+      if (isName) {
+        const oldWasBlank = !m.name;
+        const newIsBlank = !newValue;
+        m.name = newValue;
+        if (oldWasBlank !== newIsBlank) {
+          // 등록(빈칸→이름) 또는 삭제(이름→빈칸) → 해당 구역만 재정렬
+          const isEM = id >= 201;
+          const range = isEM ? [201, 240] : [1, 200];
+          const cmp = isEM ? (a, b) => a.localeCompare(b) : koreanCompare;
+          resortAndSave(range[0], range[1], cmp);
+          return;
+        }
       } else {
-        apiUpdateCell(id, field, newValue);
+        m.samter = newValue;
       }
+      apiUpdateCell(id, isName ? 'name' : 'samter', newValue);
     });
   });
 }
@@ -388,10 +410,7 @@ document.getElementById('newWeekBtn').addEventListener('click', async () => {
   }
 });
 
-async function apiGetHistory() {
-  return jsonp(CONFIG.API_URL + '?action=history');
-}
-
+// ---------- 자료 제출: 결석자 리포트 ----------
 function formatDateMDY(dateStr) {
   if (!dateStr) return '';
   const parts = dateStr.split('-');
