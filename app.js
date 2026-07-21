@@ -404,10 +404,10 @@ async function loadAndRender() {
 
 document.getElementById('editModeBtn').addEventListener('click', () => setEditMode(!editMode));
 
-// "저장 및 동기화": 화면에 있는 현재 전체 상태를 통째로 다시 Sheet에 써넣은 뒤,
-// 서버에 실제로 저장된 최신 상태를 다시 불러와 반영합니다.
-// (칸 하나씩 저장하는 방식은 네트워크 문제로 조용히 유실될 수 있어서,
-//  이 버튼이 눌리면 전체를 다시 확실하게 저장합니다.)
+// "저장 및 동기화": 1) 현재 화면을 먼저 저장 → 2) 서버 최신 상태를 다시 불러오고
+// → 3) 1~200번, 201~MAX_ID번 두 구역의 빈 칸(중간에 생긴 갭)을 자동으로 압축 정리
+// → 4) 정리된 결과를 다시 저장합니다. 개별 저장이 유실돼서 중간에 빈 줄이
+// 남아있는 경우(예: 171번은 비고 172번에 데이터가 있는 경우)를 이 버튼 한 번으로 바로잡습니다.
 document.getElementById('syncBtn').addEventListener('click', async () => {
   showToast('현재 화면을 서버에 저장하는 중...');
   try {
@@ -415,9 +415,22 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
   } catch (err) {
     showToast('저장 중 오류가 발생했습니다: ' + err.message);
   }
+
   showToast('서버에서 최신 데이터를 다시 불러옵니다...');
   await loadAndRender();
-  showToast('저장 및 동기화 완료');
+
+  resortPartition(1, 200, koreanCompare);
+  resortPartition(201, MAX_ID, (a, b) => a.localeCompare(b));
+  const expanded = checkAndExpandCapacity();
+  renderGrid();
+  renderSummary();
+
+  try {
+    await apiBulkSave(state.members);
+    showToast('저장 및 동기화 완료 (빈 칸 정리 포함)' + (expanded ? ` — ${MAX_ID}번까지 자리를 늘렸습니다` : ''));
+  } catch (err) {
+    showToast('정리된 내용 저장 실패: ' + err.message);
+  }
 });
 
 document.getElementById('serviceDate').addEventListener('change', async e => {
