@@ -9,6 +9,7 @@ const PERSISTENT_TAGS = ['환우', '타교', 'EM', '타주', '장결'];
 
 let state = { date: '', members: [] }; // members: [{id,name,samter,nam,yeo,gender}]
 let editMode = false;
+let MAX_ID = 240; // EM 구역(201~) 끝 번호 — 마지막 자리가 채워지면 자동으로 20씩 늘어납니다
 
 // ---------- JSONP helper (avoids CORS for GET reads) ----------
 function jsonp(url) {
@@ -207,19 +208,17 @@ function attachFlagHandlers() {
 function renderGrid() {
   const root = document.getElementById('gridRoot');
   let html = '';
-  for (let start = 1; start <= 240; start += 20) {
+  for (let start = 1; start <= MAX_ID; start += 20) {
     const end = start + 19;
-    if (start === 201) {
-      html += `<div class="section-label">EM 멤버 (영어 이름) — 201~240</div>`;
-    }
     const list = state.members.filter(m => m.id >= start && m.id <= end);
+    const nameHeader = start >= 201 ? 'Name' : '이름';
     html += `
       <div class="block">
         <table>
           <colgroup>
             <col class="col-num"><col class="col-name"><col class="col-samter"><col class="col-cell"><col class="col-cell">
           </colgroup>
-          <thead><tr><th>#</th><th>이름</th><th>샘터</th><th>남</th><th>여</th></tr></thead>
+          <thead><tr><th>#</th><th>${nameHeader}</th><th>샘터</th><th>남</th><th>여</th></tr></thead>
           <tbody>${list.map(rowHTML).join('')}</tbody>
         </table>
       </div>
@@ -300,7 +299,7 @@ function koreanCompare(a, b) {
   return a.localeCompare(b, 'ko');
 }
 
-// 일반 교인은 1~200번(가나다순), EM(영어이름) 교인은 201~240번(알파벳순)에
+// 일반 교인은 1~200번(가나다순), EM(영어이름) 교인은 201~MAX_ID번(알파벳순)에
 // 따로 분리되어 관리됩니다 — 두 구역은 서로 섞이지 않습니다.
 function resortPartition(startId, endId, compareFn) {
   const partition = state.members.filter(m => m.id >= startId && m.id <= endId);
@@ -319,14 +318,30 @@ function resortPartition(startId, endId, compareFn) {
   return state.members;
 }
 
+// If the very last EM slot (MAX_ID) has just been filled, the EM section is
+// completely full — automatically append 20 more slots after it.
+function checkAndExpandCapacity() {
+  const last = findMember(MAX_ID);
+  if (last && last.name && last.name.trim() !== '') {
+    const newMax = MAX_ID + 20;
+    for (let i = MAX_ID + 1; i <= newMax; i++) {
+      state.members.push({ id: i, name: '', samter: '', nam: '', yeo: '', gender: '' });
+    }
+    MAX_ID = newMax;
+    return true;
+  }
+  return false;
+}
+
 async function resortAndSave(startId, endId, compareFn) {
   resortPartition(startId, endId, compareFn);
+  const expanded = checkAndExpandCapacity();
   renderGrid();
   renderSummary();
   showToast('정렬했습니다. 저장 중...');
   try {
     await apiBulkSave(state.members);
-    showToast('저장 완료');
+    showToast('저장 완료' + (expanded ? ` (${MAX_ID}번까지 자리를 늘렸습니다)` : ''));
   } catch (err) {
     showToast('저장 실패: ' + err.message + ' — "서버와 동기화"로 다시 확인해 주세요.');
   }
@@ -347,7 +362,7 @@ function attachEditHandlers() {
         if (oldWasBlank !== newIsBlank) {
           // 등록(빈칸→이름) 또는 삭제(이름→빈칸) → 해당 구역만 재정렬
           const isEM = id >= 201;
-          const range = isEM ? [201, 240] : [1, 200];
+          const range = isEM ? [201, MAX_ID] : [1, 200];
           const cmp = isEM ? (a, b) => a.localeCompare(b) : koreanCompare;
           resortAndSave(range[0], range[1], cmp);
           return;
@@ -376,6 +391,9 @@ async function loadAndRender() {
       id: Number(m.id), name: m.name || '', samter: m.samter || '', nam: m.nam || '', yeo: m.yeo || '',
       gender: m.gender || '',
     }));
+    // keep MAX_ID in sync with however many rows the sheet actually has
+    const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
+    MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
     document.getElementById('serviceDate').value = state.date;
     renderGrid();
     renderSummary();
