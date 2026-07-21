@@ -48,7 +48,7 @@ async function apiGet() {
 }
 
 // Fire-and-forget write (no-cors POST). We don't get a readable response,
-// so we optimistically trust it and let manual "서버와 동기화" catch any drift.
+// so we optimistically trust it and let manual "저장 및 동기화" catch any drift.
 function apiUpdateCell(id, field, value) {
   fetch(CONFIG.API_URL, {
     method: 'POST',
@@ -343,7 +343,7 @@ async function resortAndSave(startId, endId, compareFn) {
     await apiBulkSave(state.members);
     showToast('저장 완료' + (expanded ? ` (${MAX_ID}번까지 자리를 늘렸습니다)` : ''));
   } catch (err) {
-    showToast('저장 실패: ' + err.message + ' — "서버와 동기화"로 다시 확인해 주세요.');
+    showToast('저장 실패: ' + err.message + ' — "저장 및 동기화"로 다시 확인해 주세요.');
   }
 }
 
@@ -404,10 +404,20 @@ async function loadAndRender() {
 
 document.getElementById('editModeBtn').addEventListener('click', () => setEditMode(!editMode));
 
+// "저장 및 동기화": 화면에 있는 현재 전체 상태를 통째로 다시 Sheet에 써넣은 뒤,
+// 서버에 실제로 저장된 최신 상태를 다시 불러와 반영합니다.
+// (칸 하나씩 저장하는 방식은 네트워크 문제로 조용히 유실될 수 있어서,
+//  이 버튼이 눌리면 전체를 다시 확실하게 저장합니다.)
 document.getElementById('syncBtn').addEventListener('click', async () => {
-  showToast('서버에서 최신 데이터를 불러옵니다...');
+  showToast('현재 화면을 서버에 저장하는 중...');
+  try {
+    await apiBulkSave(state.members);
+  } catch (err) {
+    showToast('저장 중 오류가 발생했습니다: ' + err.message);
+  }
+  showToast('서버에서 최신 데이터를 다시 불러옵니다...');
   await loadAndRender();
-  showToast('동기화 완료');
+  showToast('저장 및 동기화 완료');
 });
 
 document.getElementById('serviceDate').addEventListener('change', async e => {
