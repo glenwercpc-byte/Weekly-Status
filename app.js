@@ -102,6 +102,24 @@ function showToast(msg) {
   t._timer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
+// Counts how many of the 201~MAX_ID EM-section members are currently present.
+function countEmPresent() {
+  let count = 0;
+  state.members.forEach(m => {
+    if (!m.name) return;
+    if (m.id < 201 || m.id > MAX_ID) return;
+    const single = !m.name.includes('/');
+    if (single) {
+      const activeSlot = m.gender === 'nam' ? 'nam' : 'yeo';
+      if (isPresentValue(m[activeSlot])) count++;
+    } else {
+      if (isPresentValue(m.nam)) count++;
+      if (isPresentValue(m.yeo)) count++;
+    }
+  });
+  return count;
+}
+
 function renderSummary() {
   let presentCount = 0, absentCount = 0;
   const tagCounts = { 환우: 0, 타교: 0, EM: 0, 타주: 0, 장결: 0 };
@@ -136,15 +154,18 @@ function renderSummary() {
   // 출석 표시 숫자에 유초등부/중고등부/방문자 인원을 더함
   const displayedPresent = presentCount + kids + youth + visitors;
 
+  // EM 칸: "EM" 태그 개수가 아니라 201~MAX_ID EM 구역의 이번 주 출석 인원 수
+  const emPresentCount = countEmPresent();
+
   document.getElementById('summaryBar').innerHTML = `
     <div class="chip total">총원 <b>${totalCount}</b>명</div>
     <div class="chip present">출석 <b>${displayedPresent}</b></div>
     <div class="chip absent">결석 <b>${absentCount}</b></div>
     <div class="chip">환우 <b>${tagCounts['환우']}</b></div>
     <div class="chip">타교 <b>${tagCounts['타교']}</b></div>
-    <div class="chip">EM <b>${tagCounts['EM']}</b></div>
     <div class="chip">타주 <b>${tagCounts['타주']}</b></div>
     <div class="chip">장결 <b>${tagCounts['장결']}</b></div>
+    <div class="chip" title="201~${MAX_ID}번 EM 구역의 이번 주 출석 인원">EM <b>${emPresentCount}</b></div>
     <div class="chip extra">유,초등부: <input type="number" min="0" class="extraInput" data-key="kids" value="${kids}">명</div>
     <div class="chip extra">중고등부: <input type="number" min="0" class="extraInput" data-key="youth" value="${youth}">명</div>
     <div class="chip extra">방문자: <input type="number" min="0" class="extraInput" data-key="visitors" value="${visitors}">명</div>
