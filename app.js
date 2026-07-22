@@ -7,7 +7,7 @@ const CONFIG = {
 
 const PERSISTENT_TAGS = ['환우', '타교', 'EM', '타주', '장결'];
 
-let state = { date: '', members: [] }; // members: [{id,name,samter,nam,yeo,gender}]
+let state = { date: '', members: [], extra: { kids: 0, youth: 0, visitors: 0 } };
 let editMode = false;
 let MAX_ID = 240; // EM 구역(201~) 끝 번호 — 마지막 자리가 채워지면 자동으로 20씩 늘어납니다
 
@@ -63,6 +63,10 @@ async function apiNewWeek() {
 
 async function apiSetDate(dateStr) {
   return jsonp(CONFIG.API_URL + '?action=setdate&date=' + encodeURIComponent(dateStr));
+}
+
+async function apiSetExtra(key, value) {
+  return jsonp(CONFIG.API_URL + '?action=setextra&key=' + encodeURIComponent(key) + '&value=' + encodeURIComponent(value));
 }
 
 async function apiGetHistory() {
@@ -121,15 +125,41 @@ function renderSummary() {
     });
   });
 
+  // 총원: 이름이 있는 남/여 칸 수를 모두 합한 전체 등록 인원
+  const totalCount = presentCount + absentCount;
+
+  const extra = state.extra || { kids: 0, youth: 0, visitors: 0 };
+  const kids = Number(extra.kids) || 0;
+  const youth = Number(extra.youth) || 0;
+  const visitors = Number(extra.visitors) || 0;
+
+  // 출석 표시 숫자에 유초등부/중고등부/방문자 인원을 더함
+  const displayedPresent = presentCount + kids + youth + visitors;
+
   document.getElementById('summaryBar').innerHTML = `
-    <div class="chip present">출석 <b>${presentCount}</b></div>
+    <div class="chip total">총원 <b>${totalCount}</b>명</div>
+    <div class="chip present">출석 <b>${displayedPresent}</b></div>
     <div class="chip absent">결석 <b>${absentCount}</b></div>
     <div class="chip">환우 <b>${tagCounts['환우']}</b></div>
     <div class="chip">타교 <b>${tagCounts['타교']}</b></div>
     <div class="chip">EM <b>${tagCounts['EM']}</b></div>
     <div class="chip">타주 <b>${tagCounts['타주']}</b></div>
     <div class="chip">장결 <b>${tagCounts['장결']}</b></div>
+    <div class="chip extra">유,초등부: <input type="number" min="0" class="extraInput" data-key="kids" value="${kids}">명</div>
+    <div class="chip extra">중고등부: <input type="number" min="0" class="extraInput" data-key="youth" value="${youth}">명</div>
+    <div class="chip extra">방문자: <input type="number" min="0" class="extraInput" data-key="visitors" value="${visitors}">명</div>
   `;
+
+  document.querySelectorAll('.extraInput').forEach(inp => {
+    inp.addEventListener('change', e => {
+      const key = e.target.dataset.key;
+      const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+      if (!state.extra) state.extra = { kids: 0, youth: 0, visitors: 0 };
+      state.extra[key] = val;
+      renderSummary();
+      apiSetExtra(key, val);
+    });
+  });
 }
 
 function buildCellHTML(memberId, gender, value, hidden) {
@@ -391,6 +421,7 @@ async function loadAndRender() {
       id: Number(m.id), name: m.name || '', samter: m.samter || '', nam: m.nam || '', yeo: m.yeo || '',
       gender: m.gender || '',
     }));
+    state.extra = data.extra || { kids: 0, youth: 0, visitors: 0 };
     // keep MAX_ID in sync with however many rows the sheet actually has
     const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
     MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
@@ -439,7 +470,7 @@ document.getElementById('serviceDate').addEventListener('change', async e => {
 });
 
 document.getElementById('newWeekBtn').addEventListener('click', async () => {
-  const ok = confirm('새 주 출석표를 시작할까요?\n환우·타교·EM·타주·장결 표시는 그대로 유지되고,\n✓ / X / 기타 직접입력(출타,한국 등) 표시만 모두 지워집니다.\n\n(이전 표는 "기록" 시트에 저장됩니다)');
+  const ok = confirm('새 주 출석표를 시작할까요?\n환우·타교·EM·타주·장결 표시는 그대로 유지되고,\n✓ / X / 기타 직접입력(출타,한국 등) 표시만 모두 지워집니다.\n유,초등부/중고등부/방문자 인원수도 0으로 초기화됩니다.\n\n(이전 표는 "기록" 시트에 저장됩니다)');
   if (!ok) return;
   try {
     const res = await apiNewWeek();
