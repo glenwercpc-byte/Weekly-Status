@@ -7,7 +7,7 @@ const CONFIG = {
 
 const PERSISTENT_TAGS = ['환우', '타교', 'EM', '타주', '장결'];
 
-let state = { date: '', members: [], extra: { kids: 0, youth: 0, visitors: 0 } };
+let state = { date: '', members: [], extra: { kids: 0, youth: 0, visitors: 0 }, readonly: false };
 let editMode = false;
 let MAX_ID = 240; // EM 구역(201~) 끝 번호 — 마지막 자리가 채워지면 자동으로 20씩 늘어납니다
 
@@ -71,6 +71,10 @@ async function apiSetExtra(key, value) {
 
 async function apiGetHistory() {
   return jsonp(CONFIG.API_URL + '?action=history');
+}
+
+async function apiGetWeek(dateStr) {
+  return jsonp(CONFIG.API_URL + '?action=getweek&date=' + encodeURIComponent(dateStr));
 }
 
 function apiBulkSave(members) {
@@ -157,6 +161,18 @@ function renderSummary() {
   // EM 칸: "EM" 태그 개수가 아니라 201~MAX_ID EM 구역의 이번 주 출석 인원 수
   const emPresentCount = countEmPresent();
 
+  const extraInputsHTML = state.readonly
+    ? `
+      <div class="chip extra">유,초등부: <b>${kids}</b>명</div>
+      <div class="chip extra">중고등부: <b>${youth}</b>명</div>
+      <div class="chip extra">방문자: <b>${visitors}</b>명</div>
+    `
+    : `
+      <div class="chip extra">유,초등부: <input type="number" min="0" class="extraInput" data-key="kids" value="${kids}">명</div>
+      <div class="chip extra">중고등부: <input type="number" min="0" class="extraInput" data-key="youth" value="${youth}">명</div>
+      <div class="chip extra">방문자: <input type="number" min="0" class="extraInput" data-key="visitors" value="${visitors}">명</div>
+    `;
+
   document.getElementById('summaryBar').innerHTML = `
     <div class="chip total">총원 <b>${totalCount}</b>명</div>
     <div class="chip present">출석 <b>${displayedPresent}</b></div>
@@ -166,13 +182,12 @@ function renderSummary() {
     <div class="chip">타주 <b>${tagCounts['타주']}</b></div>
     <div class="chip">장결 <b>${tagCounts['장결']}</b></div>
     <div class="chip" title="201~${MAX_ID}번 EM 구역의 이번 주 출석 인원">EM <b>${emPresentCount}</b></div>
-    <div class="chip extra">유,초등부: <input type="number" min="0" class="extraInput" data-key="kids" value="${kids}">명</div>
-    <div class="chip extra">중고등부: <input type="number" min="0" class="extraInput" data-key="youth" value="${youth}">명</div>
-    <div class="chip extra">방문자: <input type="number" min="0" class="extraInput" data-key="visitors" value="${visitors}">명</div>
+    ${extraInputsHTML}
   `;
 
   document.querySelectorAll('.extraInput').forEach(inp => {
     inp.addEventListener('change', e => {
+      if (state.readonly) return;
       const key = e.target.dataset.key;
       const val = Math.max(0, parseInt(e.target.value, 10) || 0);
       if (!state.extra) state.extra = { kids: 0, youth: 0, visitors: 0 };
@@ -189,7 +204,8 @@ function buildCellHTML(memberId, gender, value, hidden) {
   }
   const cls = classifyCell(value);
   const label = value === '' ? '' : value;
-  return `<span class="cellbox ${cls}" data-id="${memberId}" data-gender="${gender}">${label}</span>`;
+  const readonlyClass = state.readonly ? ' readonly' : '';
+  return `<span class="cellbox ${cls}${readonlyClass}" data-id="${memberId}" data-gender="${gender}">${label}</span>`;
 }
 
 function rowHTML(m) {
@@ -205,16 +221,18 @@ function rowHTML(m) {
     // gender === '' (not yet chosen): show both until admin picks one
   }
 
+  const showEdit = editMode && !state.readonly;
+
   return `
   <tr>
     <td class="num">${m.id}</td>
     <td class="name">
-      <span class="nameView" style="display:${editMode ? 'none' : ''}"><span class="nameText">${m.name}</span>${flag}</span>
-      <input class="nameEdit" style="display:${editMode ? '' : 'none'}" data-id="${m.id}" value="${m.name}">
+      <span class="nameView" style="display:${showEdit ? 'none' : ''}"><span class="nameText">${m.name}</span>${flag}</span>
+      <input class="nameEdit" style="display:${showEdit ? '' : 'none'}" data-id="${m.id}" value="${m.name}">
     </td>
     <td class="samter">
-      <span class="samterView" style="display:${editMode ? 'none' : ''}">${m.samter || ''}</span>
-      <input class="samterEdit" style="display:${editMode ? '' : 'none'}" data-id="${m.id}" value="${m.samter || ''}" maxlength="6">
+      <span class="samterView" style="display:${showEdit ? 'none' : ''}">${m.samter || ''}</span>
+      <input class="samterEdit" style="display:${showEdit ? '' : 'none'}" data-id="${m.id}" value="${m.samter || ''}" maxlength="6">
     </td>
     <td class="cell">${buildCellHTML(m.id, 'nam', m.nam, namHidden)}</td>
     <td class="cell">${buildCellHTML(m.id, 'yeo', m.yeo, yeoHidden)}</td>
@@ -222,6 +240,7 @@ function rowHTML(m) {
 }
 
 function chooseGender(id, newGender) {
+  if (state.readonly) return;
   const m = findMember(id);
   const oldGender = m.gender || 'yeo';
   if (oldGender !== newGender) {
@@ -241,6 +260,7 @@ function attachFlagHandlers() {
   document.querySelectorAll('.flag[data-id]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
+      if (state.readonly) return;
       const id = el.dataset.id;
       const pick = document.createElement('span');
       pick.className = 'genderPick';
@@ -295,6 +315,7 @@ function findMember(id) {
 
 function onCellClear(e) {
   e.preventDefault();
+  if (state.readonly) return;
   const id = e.currentTarget.dataset.id;
   const gender = e.currentTarget.dataset.gender;
   const m = findMember(id);
@@ -305,6 +326,7 @@ function onCellClear(e) {
 }
 
 function onCellClick(e) {
+  if (state.readonly) return;
   const el = e.currentTarget;
   const id = el.dataset.id;
   const gender = el.dataset.gender;
@@ -401,6 +423,7 @@ async function resortAndSave(startId, endId, compareFn) {
 function attachEditHandlers() {
   document.querySelectorAll('.nameEdit, .samterEdit').forEach(inp => {
     inp.addEventListener('change', e => {
+      if (state.readonly) return;
       const id = Number(e.target.dataset.id);
       const m = findMember(id);
       const isName = e.target.classList.contains('nameEdit');
@@ -427,9 +450,29 @@ function attachEditHandlers() {
 }
 
 function setEditMode(on) {
+  if (state.readonly) {
+    showToast('지난 기록을 보는 중에는 편집할 수 없습니다. "현재 주로 돌아가기"를 눌러주세요.');
+    return;
+  }
   editMode = on;
   document.getElementById('editModeBtn').textContent = on ? '편집 완료' : '편집 모드';
   renderGrid();
+}
+
+function updateReadonlyBanner() {
+  const el = document.getElementById('readonlyBanner');
+  if (state.readonly) {
+    el.style.display = 'flex';
+    el.innerHTML = `📅 지난 기록 보기: ${formatDateMDY(state.date)} (편집 불가) <button class="btn" id="backToCurrentBtn">현재 주로 돌아가기</button>`;
+    document.getElementById('backToCurrentBtn').addEventListener('click', async () => {
+      state.readonly = false;
+      await loadAndRender();
+      updateReadonlyBanner();
+    });
+  } else {
+    el.style.display = 'none';
+    el.innerHTML = '';
+  }
 }
 
 // ---------- Init & top bar wiring ----------
@@ -443,12 +486,14 @@ async function loadAndRender() {
       gender: m.gender || '',
     }));
     state.extra = data.extra || { kids: 0, youth: 0, visitors: 0 };
+    state.readonly = false;
     // keep MAX_ID in sync with however many rows the sheet actually has
     const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
     MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
     document.getElementById('serviceDate').value = state.date;
     renderGrid();
     renderSummary();
+    updateReadonlyBanner();
   } catch (err) {
     showToast('서버 연결 실패: ' + err.message + ' (app.js의 CONFIG.API_URL을 확인해 주세요)');
   }
@@ -456,11 +501,49 @@ async function loadAndRender() {
 
 document.getElementById('editModeBtn').addEventListener('click', () => setEditMode(!editMode));
 
+// 날짜 옆 "조회" 버튼: 선택한 날짜의 기록을 불러옵니다.
+// 현재 진행 중인 주(설정 시트의 날짜)와 같으면 편집 가능한 상태 그대로 불러오고,
+// 지난 주(기록 시트에 보관된 스냅샷)라면 편집이 불가능한 "지난 기록 보기"로 불러옵니다.
+document.getElementById('lookupBtn').addEventListener('click', async () => {
+  const dateVal = document.getElementById('serviceDate').value;
+  if (!dateVal) { showToast('조회할 날짜를 먼저 선택해 주세요.'); return; }
+  showToast('데이터를 불러오는 중...');
+  try {
+    const res = await apiGetWeek(dateVal);
+    if (res.error) throw new Error(res.error);
+    if (!res.found) { showToast('해당 날짜의 기록을 찾을 수 없습니다.'); return; }
+
+    state.date = dateVal;
+    state.members = (res.members || []).map(m => ({
+      id: Number(m.id), name: m.name || '', samter: m.samter || '', nam: m.nam || '', yeo: m.yeo || '',
+      gender: m.gender || '',
+    }));
+    state.extra = res.extra || { kids: 0, youth: 0, visitors: 0 };
+    state.readonly = !res.isCurrent;
+
+    const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
+    MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
+
+    editMode = false;
+    document.getElementById('editModeBtn').textContent = '편집 모드';
+    renderGrid();
+    renderSummary();
+    updateReadonlyBanner();
+    showToast(state.readonly ? '지난 기록을 불러왔습니다 (편집 불가)' : '현재 주 데이터를 불러왔습니다');
+  } catch (err) {
+    showToast('조회 실패: ' + err.message);
+  }
+});
+
 // "저장 및 동기화": 1) 현재 화면을 먼저 저장 → 2) 서버 최신 상태를 다시 불러오고
 // → 3) 1~200번, 201~MAX_ID번 두 구역의 빈 칸(중간에 생긴 갭)을 자동으로 압축 정리
 // → 4) 정리된 결과를 다시 저장합니다. 개별 저장이 유실돼서 중간에 빈 줄이
 // 남아있는 경우(예: 171번은 비고 172번에 데이터가 있는 경우)를 이 버튼 한 번으로 바로잡습니다.
 document.getElementById('syncBtn').addEventListener('click', async () => {
+  if (state.readonly) {
+    showToast('지난 기록을 보는 중에는 사용할 수 없습니다. "현재 주로 돌아가기"를 눌러주세요.');
+    return;
+  }
   showToast('현재 화면을 서버에 저장하는 중...');
   try {
     await apiBulkSave(state.members);
@@ -486,11 +569,16 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('serviceDate').addEventListener('change', async e => {
+  if (state.readonly) return;
   state.date = e.target.value;
   await apiSetDate(state.date);
 });
 
 document.getElementById('newWeekBtn').addEventListener('click', async () => {
+  if (state.readonly) {
+    showToast('지난 기록을 보는 중에는 사용할 수 없습니다. "현재 주로 돌아가기"를 눌러주세요.');
+    return;
+  }
   const ok = confirm('새 주 출석표를 시작할까요?\n환우·타교·EM·타주·장결 표시는 그대로 유지되고,\n✓ / X / 기타 직접입력(출타,한국 등) 표시만 모두 지워집니다.\n유,초등부/중고등부/방문자 인원수도 0으로 초기화됩니다.\n\n(이전 표는 "기록" 시트에 저장됩니다)');
   if (!ok) return;
   try {
