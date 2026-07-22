@@ -2,7 +2,7 @@
 // GitHub Pages(프론트) + Google Apps Script(백엔드, Google Sheets) 구조
 
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbxxxwG1hJFS9WIuFlbp0831AqvcinaVS51IrYHoBBPwoTV_5wmX4h0c6RN-xm9tBegc_w/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbwB8hMRMECTFp3mYzAAPw0mAuAbZ6a-TDzksiWgvXr02ri6I8zioIHMzmsupML9I2o_aw/exec',
 };
 
 const PERSISTENT_TAGS = ['환우', '타교', 'EM', '타주', '장결'];
