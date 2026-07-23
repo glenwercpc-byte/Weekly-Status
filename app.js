@@ -57,12 +57,8 @@ function apiUpdateCell(id, field, value) {
   }).catch(() => showToast('서버 저장에 실패했을 수 있습니다. 인터넷 연결을 확인해 주세요.'));
 }
 
-async function apiNewWeek() {
-  return jsonp(CONFIG.API_URL + '?action=newweek');
-}
-
-async function apiSetDate(dateStr) {
-  return jsonp(CONFIG.API_URL + '?action=setdate&date=' + encodeURIComponent(dateStr));
+async function apiNewWeek(newDateStr) {
+  return jsonp(CONFIG.API_URL + '?action=newweek&newDate=' + encodeURIComponent(newDateStr || ''));
 }
 
 async function apiSetExtra(key, value) {
@@ -104,6 +100,19 @@ function showToast(msg) {
   t.classList.add('show');
   clearTimeout(t._timer);
   t._timer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+function formatDateMDY(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [y, m, d] = parts;
+  return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
+}
+
+function updateCurrentDateLabel() {
+  const el = document.getElementById('currentDateLabel');
+  if (el) el.textContent = state.date ? `이번 주: ${formatDateMDY(state.date)}` : '';
 }
 
 // Counts how many of the 201~MAX_ID EM-section members are currently present.
@@ -490,7 +499,7 @@ async function loadAndRender() {
     // keep MAX_ID in sync with however many rows the sheet actually has
     const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
     MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
-    document.getElementById('serviceDate').value = state.date;
+    updateCurrentDateLabel();
     // conveniently default the lookup date to the current week's date too
     const lookupInput = document.getElementById('lookupDate');
     if (lookupInput && !lookupInput.value) lookupInput.value = state.date;
@@ -504,9 +513,7 @@ async function loadAndRender() {
 
 document.getElementById('editModeBtn').addEventListener('click', () => setEditMode(!editMode));
 
-// 날짜 옆 "조회" 버튼: "조회" 전용 날짜 칸(lookupDate)의 값을 사용합니다.
-// (이번 주 날짜 칸(serviceDate)과 분리되어 있어서, 조회를 하려고 날짜를 바꿔도
-// 이번 주 날짜가 실수로 덮어써지지 않습니다.)
+// 날짜 옆 "조회" 버튼: 별도의 "조회 전용" 날짜 칸(lookupDate)의 값을 사용합니다.
 // 현재 진행 중인 주(설정 시트의 날짜)와 같으면 편집 가능한 상태 그대로 불러오고,
 // 지난 주(기록 시트에 보관된 스냅샷)라면 편집이 불가능한 "지난 기록 보기"로 불러옵니다.
 document.getElementById('lookupBtn').addEventListener('click', async () => {
@@ -531,6 +538,7 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
 
     editMode = false;
     document.getElementById('editModeBtn').textContent = '편집 모드';
+    updateCurrentDateLabel();
     renderGrid();
     renderSummary();
     updateReadonlyBanner();
@@ -573,23 +581,41 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('serviceDate').addEventListener('change', async e => {
-  if (state.readonly) return;
-  state.date = e.target.value;
-  await apiSetDate(state.date);
-});
-
-document.getElementById('newWeekBtn').addEventListener('click', async () => {
+// ---------- 새 주 시작: 날짜 선택 팝업 ----------
+function openNewWeekModal() {
   if (state.readonly) {
     showToast('지난 기록을 보는 중에는 사용할 수 없습니다. "현재 주로 돌아가기"를 눌러주세요.');
     return;
   }
-  const ok = confirm('새 주 출석표를 시작할까요?\n환우·타교·EM·타주·장결 표시는 그대로 유지되고,\n✓ / X / 기타 직접입력(출타,한국 등) 표시만 모두 지워집니다.\n유,초등부/중고등부/방문자 인원수도 0으로 초기화됩니다.\n\n(이전 표는 "기록" 시트에 저장됩니다)');
-  if (!ok) return;
+  let nextDate = state.date;
+  if (state.date) {
+    const d = new Date(state.date + 'T00:00:00');
+    d.setDate(d.getDate() + 7);
+    nextDate = d.toISOString().slice(0, 10);
+  }
+  document.getElementById('newWeekDateInput').value = nextDate;
+  document.getElementById('newWeekModal').style.display = 'flex';
+}
+
+function closeNewWeekModal() {
+  document.getElementById('newWeekModal').style.display = 'none';
+}
+
+document.getElementById('newWeekBtn').addEventListener('click', openNewWeekModal);
+document.getElementById('newWeekModalCloseBtn').addEventListener('click', closeNewWeekModal);
+document.getElementById('newWeekCancelBtn').addEventListener('click', closeNewWeekModal);
+document.getElementById('newWeekModal').addEventListener('click', e => {
+  if (e.target.id === 'newWeekModal') closeNewWeekModal();
+});
+
+document.getElementById('newWeekConfirmBtn').addEventListener('click', async () => {
+  const chosenDate = document.getElementById('newWeekDateInput').value;
+  if (!chosenDate) { showToast('날짜를 선택해 주세요.'); return; }
+  closeNewWeekModal();
   try {
-    const res = await apiNewWeek();
+    const res = await apiNewWeek(chosenDate);
     if (res.error) throw new Error(res.error);
-    showToast('새 주 출석표가 준비되었습니다.');
+    showToast(`새 주(${formatDateMDY(res.newDate)}) 출석표가 준비되었습니다.`);
     await loadAndRender();
   } catch (err) {
     showToast('새 주 시작 실패: ' + err.message);
@@ -597,13 +623,6 @@ document.getElementById('newWeekBtn').addEventListener('click', async () => {
 });
 
 // ---------- 자료 제출: 결석자 리포트 ----------
-function formatDateMDY(dateStr) {
-  if (!dateStr) return '';
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return dateStr;
-  const [y, m, d] = parts;
-  return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
-}
 
 // Returns the (name, samter, gender-label, applicable-slot) list of "real"
 // attendance slots to track: couples => both nam & yeo; singles => whichever slot is active.
