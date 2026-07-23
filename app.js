@@ -57,6 +57,26 @@ function apiUpdateCell(id, field, value) {
   }).catch(() => showToast('서버 저장에 실패했을 수 있습니다. 인터넷 연결을 확인해 주세요.'));
 }
 
+// Same as apiUpdateCell but writes into an archived weekly snapshot inside
+// the "기록" sheet (used when viewing/editing a past week via 조회).
+function apiUpdateHistoricalCell(dateStr, id, field, value) {
+  fetch(CONFIG.API_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify({ action: 'updatehistorical', date: dateStr, id, field, value }),
+  }).catch(() => showToast('서버 저장에 실패했을 수 있습니다. 인터넷 연결을 확인해 주세요.'));
+}
+
+// Routes a single-field edit to the right place: the live current sheet,
+// or the archived historical snapshot, depending on what's being viewed.
+function saveField(id, field, value) {
+  if (state.readonly) {
+    apiUpdateHistoricalCell(state.date, id, field, value);
+  } else {
+    apiUpdateCell(id, field, value);
+  }
+}
+
 async function apiNewWeek(newDateStr) {
   return jsonp(CONFIG.API_URL + '?action=newweek&newDate=' + encodeURIComponent(newDateStr || ''));
 }
@@ -196,7 +216,7 @@ function renderSummary() {
 
   document.querySelectorAll('.extraInput').forEach(inp => {
     inp.addEventListener('change', e => {
-      if (state.readonly) return;
+      if (state.readonly) return; // 유초등부/중고등부/방문자는 지난 주 편집 대상이 아님
       const key = e.target.dataset.key;
       const val = Math.max(0, parseInt(e.target.value, 10) || 0);
       if (!state.extra) state.extra = { kids: 0, youth: 0, visitors: 0 };
@@ -213,8 +233,7 @@ function buildCellHTML(memberId, gender, value, hidden) {
   }
   const cls = classifyCell(value);
   const label = value === '' ? '' : value;
-  const readonlyClass = state.readonly ? ' readonly' : '';
-  return `<span class="cellbox ${cls}${readonlyClass}" data-id="${memberId}" data-gender="${gender}">${label}</span>`;
+  return `<span class="cellbox ${cls}" data-id="${memberId}" data-gender="${gender}">${label}</span>`;
 }
 
 function rowHTML(m) {
@@ -230,7 +249,7 @@ function rowHTML(m) {
     // gender === '' (not yet chosen): show both until admin picks one
   }
 
-  const showEdit = editMode && !state.readonly;
+  const showEdit = editMode;
 
   return `
   <tr>
@@ -249,18 +268,17 @@ function rowHTML(m) {
 }
 
 function chooseGender(id, newGender) {
-  if (state.readonly) return;
   const m = findMember(id);
   const oldGender = m.gender || 'yeo';
   if (oldGender !== newGender) {
     const val = m[oldGender];
     m[newGender] = val;
     m[oldGender] = '';
-    apiUpdateCell(id, newGender, val);
-    apiUpdateCell(id, oldGender, '');
+    saveField(id, newGender, val);
+    saveField(id, oldGender, '');
   }
   m.gender = newGender;
-  apiUpdateCell(id, 'gender', newGender);
+  saveField(id, 'gender', newGender);
   renderGrid();
   renderSummary();
 }
@@ -269,7 +287,6 @@ function attachFlagHandlers() {
   document.querySelectorAll('.flag[data-id]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
-      if (state.readonly) return;
       const id = el.dataset.id;
       const pick = document.createElement('span');
       pick.className = 'genderPick';
@@ -324,18 +341,16 @@ function findMember(id) {
 
 function onCellClear(e) {
   e.preventDefault();
-  if (state.readonly) return;
   const id = e.currentTarget.dataset.id;
   const gender = e.currentTarget.dataset.gender;
   const m = findMember(id);
   m[gender] = '';
-  apiUpdateCell(id, gender, '');
+  saveField(id, gender, '');
   renderGrid();
   renderSummary();
 }
 
 function onCellClick(e) {
-  if (state.readonly) return;
   const el = e.currentTarget;
   const id = el.dataset.id;
   const gender = el.dataset.gender;
@@ -344,13 +359,13 @@ function onCellClick(e) {
 
   if (current === '') {
     m[gender] = '✓';
-    apiUpdateCell(id, gender, '✓');
+    saveField(id, gender, '✓');
     renderGrid(); renderSummary();
     return;
   }
   if (current === '✓') {
     m[gender] = 'X';
-    apiUpdateCell(id, gender, 'X');
+    saveField(id, gender, 'X');
     renderGrid(); renderSummary();
     return;
   }
@@ -361,7 +376,7 @@ function onCellClick(e) {
     const commit = () => {
       const v = input.value.trim();
       m[gender] = v;
-      apiUpdateCell(id, gender, v);
+      saveField(id, gender, v);
       renderGrid(); renderSummary();
     };
     input.addEventListener('blur', commit);
@@ -373,7 +388,7 @@ function onCellClick(e) {
   }
   // custom tag -> back to blank
   m[gender] = '';
-  apiUpdateCell(id, gender, '');
+  saveField(id, gender, '');
   renderGrid(); renderSummary();
 }
 
@@ -383,6 +398,7 @@ function koreanCompare(a, b) {
 
 // 일반 교인은 1~200번(가나다순), EM(영어이름) 교인은 201~MAX_ID번(알파벳순)에
 // 따로 분리되어 관리됩니다 — 두 구역은 서로 섞이지 않습니다.
+// (지난 기록 편집 중에는 재정렬을 하지 않습니다 — 아래 attachEditHandlers 참고.)
 function resortPartition(startId, endId, compareFn) {
   const partition = state.members.filter(m => m.id >= startId && m.id <= endId);
   const others = state.members.filter(m => m.id < startId || m.id > endId);
@@ -432,7 +448,6 @@ async function resortAndSave(startId, endId, compareFn) {
 function attachEditHandlers() {
   document.querySelectorAll('.nameEdit, .samterEdit').forEach(inp => {
     inp.addEventListener('change', e => {
-      if (state.readonly) return;
       const id = Number(e.target.dataset.id);
       const m = findMember(id);
       const isName = e.target.classList.contains('nameEdit');
@@ -442,8 +457,9 @@ function attachEditHandlers() {
         const oldWasBlank = !m.name;
         const newIsBlank = !newValue;
         m.name = newValue;
-        if (oldWasBlank !== newIsBlank) {
-          // 등록(빈칸→이름) 또는 삭제(이름→빈칸) → 해당 구역만 재정렬
+        // 재정렬(가나다순 자동 정렬)은 "현재 주"에서만 동작합니다 — 지난 기록은
+        // 순서를 그대로 유지한 채 그 자리의 값만 바꿉니다.
+        if (!state.readonly && oldWasBlank !== newIsBlank) {
           const isEM = id >= 201;
           const range = isEM ? [201, MAX_ID] : [1, 200];
           const cmp = isEM ? (a, b) => a.localeCompare(b) : koreanCompare;
@@ -453,16 +469,12 @@ function attachEditHandlers() {
       } else {
         m.samter = newValue;
       }
-      apiUpdateCell(id, isName ? 'name' : 'samter', newValue);
+      saveField(id, isName ? 'name' : 'samter', newValue);
     });
   });
 }
 
 function setEditMode(on) {
-  if (state.readonly) {
-    showToast('지난 기록을 보는 중에는 편집할 수 없습니다. "현재 주로 돌아가기"를 눌러주세요.');
-    return;
-  }
   editMode = on;
   document.getElementById('editModeBtn').textContent = on ? '편집 완료' : '편집 모드';
   renderGrid();
@@ -472,7 +484,7 @@ function updateReadonlyBanner() {
   const el = document.getElementById('readonlyBanner');
   if (state.readonly) {
     el.style.display = 'flex';
-    el.innerHTML = `📅 지난 기록 보기: ${formatDateMDY(state.date)} (편집 불가) <button class="btn" id="backToCurrentBtn">현재 주로 돌아가기</button>`;
+    el.innerHTML = `📅 지난 기록 보기: ${formatDateMDY(state.date)} — 수정하면 그 날짜의 기록에 바로 저장됩니다 <button class="btn" id="backToCurrentBtn">현재 주로 돌아가기</button>`;
     document.getElementById('backToCurrentBtn').addEventListener('click', async () => {
       state.readonly = false;
       await loadAndRender();
@@ -515,7 +527,8 @@ document.getElementById('editModeBtn').addEventListener('click', () => setEditMo
 
 // 날짜 옆 "조회" 버튼: 별도의 "조회 전용" 날짜 칸(lookupDate)의 값을 사용합니다.
 // 현재 진행 중인 주(설정 시트의 날짜)와 같으면 편집 가능한 상태 그대로 불러오고,
-// 지난 주(기록 시트에 보관된 스냅샷)라면 편집이 불가능한 "지난 기록 보기"로 불러옵니다.
+// 지난 주(기록 시트에 보관된 스냅샷)라면 "지난 기록 보기"로 불러오되, 이제는
+// 그 화면에서 칸을 클릭/수정하면 기록 시트의 해당 날짜 데이터에 바로 저장됩니다.
 document.getElementById('lookupBtn').addEventListener('click', async () => {
   const dateVal = document.getElementById('lookupDate').value;
   if (!dateVal) { showToast('조회할 날짜를 먼저 선택해 주세요.'); return; }
@@ -542,7 +555,7 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
     renderGrid();
     renderSummary();
     updateReadonlyBanner();
-    showToast(state.readonly ? '지난 기록을 불러왔습니다 (편집 불가)' : '현재 주 데이터를 불러왔습니다');
+    showToast(state.readonly ? '지난 기록을 불러왔습니다 (수정하면 그 날짜에 저장됩니다)' : '현재 주 데이터를 불러왔습니다');
   } catch (err) {
     showToast('조회 실패: ' + err.message);
   }
@@ -550,8 +563,8 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
 
 // "저장 및 동기화": 1) 현재 화면을 먼저 저장 → 2) 서버 최신 상태를 다시 불러오고
 // → 3) 1~200번, 201~MAX_ID번 두 구역의 빈 칸(중간에 생긴 갭)을 자동으로 압축 정리
-// → 4) 정리된 결과를 다시 저장합니다. 개별 저장이 유실돼서 중간에 빈 줄이
-// 남아있는 경우(예: 171번은 비고 172번에 데이터가 있는 경우)를 이 버튼 한 번으로 바로잡습니다.
+// → 4) 정리된 결과를 다시 저장합니다. (지난 기록을 보는 중에는 사용할 수 없습니다 —
+// 이 버튼은 "현재 주" 시트 전체를 다루는 기능이라 지난 기록에는 적용되지 않습니다.)
 document.getElementById('syncBtn').addEventListener('click', async () => {
   if (state.readonly) {
     showToast('지난 기록을 보는 중에는 사용할 수 없습니다. "현재 주로 돌아가기"를 눌러주세요.');
@@ -584,6 +597,7 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
 // ---------- 새 주 시작: 간단한 인라인 달력 (조회 달력과 같은 방식) ----------
 // "새 주 시작"을 누르면 숨겨져 있던 날짜 칸이 나타나며 바로 달력이 열립니다.
 // 날짜를 고르는 즉시(별도 확인 버튼 없이) 새 주 시작이 진행됩니다.
+// (지난 기록을 보는 중에는 사용할 수 없습니다.)
 document.getElementById('newWeekBtn').addEventListener('click', () => {
   if (state.readonly) {
     showToast('지난 기록을 보는 중에는 사용할 수 없습니다. "현재 주로 돌아가기"를 눌러주세요.');
