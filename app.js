@@ -491,6 +491,9 @@ async function loadAndRender() {
     const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
     MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
     document.getElementById('serviceDate').value = state.date;
+    // conveniently default the lookup date to the current week's date too
+    const lookupInput = document.getElementById('lookupDate');
+    if (lookupInput && !lookupInput.value) lookupInput.value = state.date;
     renderGrid();
     renderSummary();
     updateReadonlyBanner();
@@ -501,11 +504,13 @@ async function loadAndRender() {
 
 document.getElementById('editModeBtn').addEventListener('click', () => setEditMode(!editMode));
 
-// 날짜 옆 "조회" 버튼: 선택한 날짜의 기록을 불러옵니다.
+// 날짜 옆 "조회" 버튼: "조회" 전용 날짜 칸(lookupDate)의 값을 사용합니다.
+// (이번 주 날짜 칸(serviceDate)과 분리되어 있어서, 조회를 하려고 날짜를 바꿔도
+// 이번 주 날짜가 실수로 덮어써지지 않습니다.)
 // 현재 진행 중인 주(설정 시트의 날짜)와 같으면 편집 가능한 상태 그대로 불러오고,
 // 지난 주(기록 시트에 보관된 스냅샷)라면 편집이 불가능한 "지난 기록 보기"로 불러옵니다.
 document.getElementById('lookupBtn').addEventListener('click', async () => {
-  const dateVal = document.getElementById('serviceDate').value;
+  const dateVal = document.getElementById('lookupDate').value;
   if (!dateVal) { showToast('조회할 날짜를 먼저 선택해 주세요.'); return; }
   showToast('데이터를 불러오는 중...');
   try {
