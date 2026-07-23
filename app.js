@@ -581,8 +581,10 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
   }
 });
 
-// ---------- 새 주 시작: 날짜 선택 팝업 ----------
-function openNewWeekModal() {
+// ---------- 새 주 시작: 간단한 인라인 달력 (조회 달력과 같은 방식) ----------
+// "새 주 시작"을 누르면 숨겨져 있던 날짜 칸이 나타나며 바로 달력이 열립니다.
+// 날짜를 고르는 즉시(별도 확인 버튼 없이) 새 주 시작이 진행됩니다.
+document.getElementById('newWeekBtn').addEventListener('click', () => {
   if (state.readonly) {
     showToast('지난 기록을 보는 중에는 사용할 수 없습니다. "현재 주로 돌아가기"를 눌러주세요.');
     return;
@@ -593,25 +595,20 @@ function openNewWeekModal() {
     d.setDate(d.getDate() + 7);
     nextDate = d.toISOString().slice(0, 10);
   }
-  document.getElementById('newWeekDateInput').value = nextDate;
-  document.getElementById('newWeekModal').style.display = 'flex';
-}
-
-function closeNewWeekModal() {
-  document.getElementById('newWeekModal').style.display = 'none';
-}
-
-document.getElementById('newWeekBtn').addEventListener('click', openNewWeekModal);
-document.getElementById('newWeekModalCloseBtn').addEventListener('click', closeNewWeekModal);
-document.getElementById('newWeekCancelBtn').addEventListener('click', closeNewWeekModal);
-document.getElementById('newWeekModal').addEventListener('click', e => {
-  if (e.target.id === 'newWeekModal') closeNewWeekModal();
+  const input = document.getElementById('newWeekDateInput');
+  input.value = nextDate;
+  input.style.display = 'inline-block';
+  if (typeof input.showPicker === 'function') {
+    input.showPicker();
+  } else {
+    input.focus();
+  }
 });
 
-document.getElementById('newWeekConfirmBtn').addEventListener('click', async () => {
-  const chosenDate = document.getElementById('newWeekDateInput').value;
-  if (!chosenDate) { showToast('날짜를 선택해 주세요.'); return; }
-  closeNewWeekModal();
+document.getElementById('newWeekDateInput').addEventListener('change', async e => {
+  const chosenDate = e.target.value;
+  e.target.style.display = 'none';
+  if (!chosenDate) return;
   try {
     const res = await apiNewWeek(chosenDate);
     if (res.error) throw new Error(res.error);
