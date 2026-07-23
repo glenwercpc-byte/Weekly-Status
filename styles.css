@@ -44,6 +44,15 @@ body{
   gap:8px;
 }
 .topbar h1 .dot{width:8px;height:8px;border-radius:50%;background:var(--gold);}
+.current-date-label{
+  font-size:13px;
+  color:var(--gold-soft);
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.25);
+  border-radius:6px;
+  padding:6px 10px;
+  white-space:nowrap;
+}
 .topbar .date-input{
   background:transparent;
   border:1px solid rgba(255,255,255,.35);
@@ -272,6 +281,7 @@ td.name input:focus{
   max-height:85vh; display:flex; flex-direction:column;
   box-shadow:0 12px 40px rgba(0,0,0,.3);
 }
+.modal.small-modal{max-width:420px;}
 .modal-header{
   display:flex; align-items:center; justify-content:space-between;
   padding:16px 20px; border-bottom:1px solid var(--line);
@@ -286,6 +296,16 @@ td.name input:focus{
 .modal-body{
   padding:16px 20px; overflow-y:auto;
 }
+.modal-desc{font-size:12.5px; color:var(--muted); line-height:1.6; margin:0 0 14px;}
+.modal-label{display:block; font-size:12.5px; font-weight:600; color:var(--text); margin-bottom:6px;}
+.date-input.dark{
+  background:#fff; border:1px solid var(--line); color:var(--text);
+  border-radius:6px; padding:8px 10px; font-size:14px; width:100%; color-scheme:light;
+}
+.modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:18px;}
+.modal-actions .btn{color:var(--navy); border-color:var(--line); background:var(--bg);}
+.modal-actions .btn:hover{background:#e8e4d8;}
+.modal-actions .btn.gold{color:var(--navy);}
 .report-columns{
   display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px;
 }
