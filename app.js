@@ -67,6 +67,15 @@ function apiUpdateHistoricalCell(dateStr, id, field, value) {
   }).catch(() => showToast('서버 저장에 실패했을 수 있습니다. 인터넷 연결을 확인해 주세요.'));
 }
 
+// Same idea but for the 유초등부/중고등부/방문자 counts of an archived week.
+function apiUpdateHistoricalExtra(dateStr, key, value) {
+  fetch(CONFIG.API_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify({ action: 'updatehistoricalextra', date: dateStr, key, value }),
+  }).catch(() => showToast('서버 저장에 실패했을 수 있습니다. 인터넷 연결을 확인해 주세요.'));
+}
+
 // Routes a single-field edit to the right place: the live current sheet,
 // or the archived historical snapshot, depending on what's being viewed.
 function saveField(id, field, value) {
@@ -190,17 +199,13 @@ function renderSummary() {
   // EM 칸: "EM" 태그 개수가 아니라 201~MAX_ID EM 구역의 이번 주 출석 인원 수
   const emPresentCount = countEmPresent();
 
-  const extraInputsHTML = state.readonly
-    ? `
-      <div class="chip extra">유,초등부: <b>${kids}</b>명</div>
-      <div class="chip extra">중고등부: <b>${youth}</b>명</div>
-      <div class="chip extra">방문자: <b>${visitors}</b>명</div>
-    `
-    : `
-      <div class="chip extra">유,초등부: <input type="number" min="0" class="extraInput" data-key="kids" value="${kids}">명</div>
-      <div class="chip extra">중고등부: <input type="number" min="0" class="extraInput" data-key="youth" value="${youth}">명</div>
-      <div class="chip extra">방문자: <input type="number" min="0" class="extraInput" data-key="visitors" value="${visitors}">명</div>
-    `;
+  // 유초등부/중고등부/방문자는 이번 주든 지난 기록(조회)이든 항상 편집 가능합니다 —
+  // 지난 기록은 saveField와 마찬가지로 해당 날짜의 기록에 바로 저장됩니다.
+  const extraInputsHTML = `
+    <div class="chip extra">유,초등부: <input type="number" min="0" class="extraInput" data-key="kids" value="${kids}">명</div>
+    <div class="chip extra">중고등부: <input type="number" min="0" class="extraInput" data-key="youth" value="${youth}">명</div>
+    <div class="chip extra">방문자: <input type="number" min="0" class="extraInput" data-key="visitors" value="${visitors}">명</div>
+  `;
 
   document.getElementById('summaryBar').innerHTML = `
     <div class="chip total">총원 <b>${totalCount}</b>명</div>
@@ -216,13 +221,16 @@ function renderSummary() {
 
   document.querySelectorAll('.extraInput').forEach(inp => {
     inp.addEventListener('change', e => {
-      if (state.readonly) return; // 유초등부/중고등부/방문자는 지난 주 편집 대상이 아님
       const key = e.target.dataset.key;
       const val = Math.max(0, parseInt(e.target.value, 10) || 0);
       if (!state.extra) state.extra = { kids: 0, youth: 0, visitors: 0 };
       state.extra[key] = val;
       renderSummary();
-      apiSetExtra(key, val);
+      if (state.readonly) {
+        apiUpdateHistoricalExtra(state.date, key, val);
+      } else {
+        apiSetExtra(key, val);
+      }
     });
   });
 }
@@ -528,7 +536,8 @@ document.getElementById('editModeBtn').addEventListener('click', () => setEditMo
 // 날짜 옆 "조회" 버튼: 별도의 "조회 전용" 날짜 칸(lookupDate)의 값을 사용합니다.
 // 현재 진행 중인 주(설정 시트의 날짜)와 같으면 편집 가능한 상태 그대로 불러오고,
 // 지난 주(기록 시트에 보관된 스냅샷)라면 "지난 기록 보기"로 불러오되, 이제는
-// 그 화면에서 칸을 클릭/수정하면 기록 시트의 해당 날짜 데이터에 바로 저장됩니다.
+// 그 화면에서 칸을 클릭/수정하면(유초등부/중고등부/방문자 포함) 기록 시트의
+// 해당 날짜 데이터에 바로 저장됩니다.
 document.getElementById('lookupBtn').addEventListener('click', async () => {
   const dateVal = document.getElementById('lookupDate').value;
   if (!dateVal) { showToast('조회할 날짜를 먼저 선택해 주세요.'); return; }
