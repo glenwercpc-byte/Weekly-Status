@@ -5,7 +5,7 @@ const CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbwB8hMRMECTFp3mYzAAPw0mAuAbZ6a-TDzksiWgvXr02ri6I8zioIHMzmsupML9I2o_aw/exec',
 };
 
-const PERSISTENT_TAGS = ['환우', '타교', 'EM', '타주', '장결'];
+const PERSISTENT_TAGS = ['환우', '타교', '한국', '타주', '장결'];
 
 let state = { date: '', members: [], extra: { kids: 0, youth: 0, visitors: 0 }, readonly: false };
 let editMode = false;
@@ -164,7 +164,7 @@ function countEmPresent() {
 
 function renderSummary() {
   let presentCount = 0, absentCount = 0;
-  const tagCounts = { 환우: 0, 타교: 0, EM: 0, 타주: 0, 장결: 0 };
+  const tagCounts = { 환우: 0, 타교: 0, 한국: 0, 타주: 0, 장결: 0 };
 
   state.members.forEach(m => {
     if (!m.name) return; // skip blank future-registration rows
@@ -196,7 +196,7 @@ function renderSummary() {
   // 출석 표시 숫자에 유초등부/중고등부/방문자 인원을 더함
   const displayedPresent = presentCount + kids + youth + visitors;
 
-  // EM 칸: "EM" 태그 개수가 아니라 201~MAX_ID EM 구역의 이번 주 출석 인원 수
+  // EM 칸: 상태 태그 개수가 아니라 201~MAX_ID EM 구역의 이번 주 출석 인원 수
   const emPresentCount = countEmPresent();
 
   // 유초등부/중고등부/방문자는 이번 주든 지난 기록(조회)이든 항상 편집 가능합니다 —
@@ -215,6 +215,7 @@ function renderSummary() {
     <div class="chip">타교 <b>${tagCounts['타교']}</b></div>
     <div class="chip">타주 <b>${tagCounts['타주']}</b></div>
     <div class="chip">장결 <b>${tagCounts['장결']}</b></div>
+    <div class="chip">한국 <b>${tagCounts['한국']}</b></div>
     <div class="chip" title="201~${MAX_ID}번 EM 구역의 이번 주 출석 인원">EM <b>${emPresentCount}</b></div>
     ${extraInputsHTML}
   `;
