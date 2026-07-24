@@ -7,7 +7,7 @@ const CONFIG = {
 
 const PERSISTENT_TAGS = ['환우', '타교', '한국', '타주', '장결'];
 
-let state = { date: '', members: [], extra: { kids: 0, youth: 0, visitors: 0 }, readonly: false };
+let state = { date: '', members: [], extra: { kids: 0, youth: 0, visitors: 0 }, readonly: false, weekStarted: false };
 let editMode = false;
 let MAX_ID = 240; // EM 구역(201~) 끝 번호 — 마지막 자리가 채워지면 자동으로 20씩 늘어납니다
 
@@ -78,11 +78,15 @@ function apiUpdateHistoricalExtra(dateStr, key, value) {
 
 // Routes a single-field edit to the right place: the live current sheet,
 // or the archived historical snapshot, depending on what's being viewed.
+// Editing the CURRENT week also flips weekStarted on (both locally, for an
+// immediate UI switch from all-zero to real counts, and on the server via
+// updateCell(), so it survives a page reload).
 function saveField(id, field, value) {
   if (state.readonly) {
     apiUpdateHistoricalCell(state.date, id, field, value);
   } else {
     apiUpdateCell(id, field, value);
+    state.weekStarted = true;
   }
 }
 
@@ -199,6 +203,18 @@ function renderSummary() {
   // EM 칸: 상태 태그 개수가 아니라 201~MAX_ID EM 구역의 이번 주 출석 인원 수
   const emPresentCount = countEmPresent();
 
+  // "새 주 시작" 직후(아직 아무 칸도 클릭/저장하지 않은 상태)에는 총원~EM까지
+  // 전부 0으로 보여줍니다. 지난 기록(조회) 보기는 항상 실제 숫자를 보여줍니다.
+  const showZero = !state.readonly && !state.weekStarted;
+
+  const dTotal = showZero ? 0 : totalCount;
+  const dPresent = showZero ? 0 : displayedPresent;
+  const dAbsent = showZero ? 0 : absentCount;
+  const dTags = showZero
+    ? { 환우: 0, 타교: 0, 한국: 0, 타주: 0, 장결: 0 }
+    : tagCounts;
+  const dEm = showZero ? 0 : emPresentCount;
+
   // 유초등부/중고등부/방문자는 이번 주든 지난 기록(조회)이든 항상 편집 가능합니다 —
   // 지난 기록은 saveField와 마찬가지로 해당 날짜의 기록에 바로 저장됩니다.
   const extraInputsHTML = `
@@ -208,15 +224,15 @@ function renderSummary() {
   `;
 
   document.getElementById('summaryBar').innerHTML = `
-    <div class="chip total">총원 <b>${totalCount}</b>명</div>
-    <div class="chip present">출석 <b>${displayedPresent}</b></div>
-    <div class="chip absent">결석 <b>${absentCount}</b></div>
-    <div class="chip">환우 <b>${tagCounts['환우']}</b></div>
-    <div class="chip">타교 <b>${tagCounts['타교']}</b></div>
-    <div class="chip">타주 <b>${tagCounts['타주']}</b></div>
-    <div class="chip">장결 <b>${tagCounts['장결']}</b></div>
-    <div class="chip">한국 <b>${tagCounts['한국']}</b></div>
-    <div class="chip" title="201~${MAX_ID}번 EM 구역의 이번 주 출석 인원">EM <b>${emPresentCount}</b></div>
+    <div class="chip total">총원 <b>${dTotal}</b>명</div>
+    <div class="chip present">출석 <b>${dPresent}</b></div>
+    <div class="chip absent">결석 <b>${dAbsent}</b></div>
+    <div class="chip">환우 <b>${dTags['환우']}</b></div>
+    <div class="chip">타교 <b>${dTags['타교']}</b></div>
+    <div class="chip">타주 <b>${dTags['타주']}</b></div>
+    <div class="chip">장결 <b>${dTags['장결']}</b></div>
+    <div class="chip">한국 <b>${dTags['한국']}</b></div>
+    <div class="chip" title="201~${MAX_ID}번 EM 구역의 이번 주 출석 인원">EM <b>${dEm}</b></div>
     ${extraInputsHTML}
   `;
 
@@ -517,6 +533,7 @@ async function loadAndRender() {
     }));
     state.extra = data.extra || { kids: 0, youth: 0, visitors: 0 };
     state.readonly = false;
+    state.weekStarted = !!data.weekStarted;
     // keep MAX_ID in sync with however many rows the sheet actually has
     const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
     MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
@@ -555,6 +572,7 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
     }));
     state.extra = res.extra || { kids: 0, youth: 0, visitors: 0 };
     state.readonly = !res.isCurrent;
+    state.weekStarted = !!res.weekStarted;
 
     const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
     MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
