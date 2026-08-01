@@ -205,6 +205,10 @@ td.name{
   min-width:0;
   flex:1 1 auto;
 }
+.nameText.excluded{
+  color:#c0392b;
+  font-weight:700;
+}
 .name .flag{
   color:var(--gold);
   font-size:10px;
