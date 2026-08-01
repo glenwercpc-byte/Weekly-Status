@@ -121,8 +121,10 @@ function apiBulkSave(members) {
 }
 
 // ---------- Rendering helpers ----------
+// 이제 빈칸은 "출석"이 아니라 "결석"으로 계산됩니다 — 명시적으로 ✓를 클릭해야
+// 출석으로 집계됩니다. (전에는 "빈칸=출석"이었습니다.)
 function isPresentValue(v) {
-  return v === '' || v === '✓';
+  return v === '✓';
 }
 
 function classifyCell(v) {
