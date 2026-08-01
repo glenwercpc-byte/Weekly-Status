@@ -5,7 +5,12 @@ const CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbwB8hMRMECTFp3mYzAAPw0mAuAbZ6a-TDzksiWgvXr02ri6I8zioIHMzmsupML9I2o_aw/exec',
 };
 
-const PERSISTENT_TAGS = ['환우', '타교', '한국', '타주', '장결'];
+// "한국": 일시적으로 한국에 가 있고 다시 돌아오는 사람 (자동 유지, 총원에는 포함)
+// "귀국": 영구적으로 돌아오지 않는 사람 (자동 유지, 총원에서는 제외 + 이름 빨간색)
+const PERSISTENT_TAGS = ['환우', '타교', '한국', '타주', '장결', '귀국'];
+
+// 타교/타주/귀국 상태인 사람은 총원 집계에서 제외되고, 이름이 빨간색으로 표시됩니다.
+const EXCLUDE_FROM_TOTAL = ['타교', '타주', '귀국'];
 
 let state = { date: '', members: [], extra: { kids: 0, youth: 0, visitors: 0 }, readonly: false, weekStarted: false };
 let editMode = false;
@@ -168,7 +173,7 @@ function countEmPresent() {
 
 function renderSummary() {
   let presentCount = 0, absentCount = 0;
-  const tagCounts = { 환우: 0, 타교: 0, 한국: 0, 타주: 0, 장결: 0 };
+  const tagCounts = { 환우: 0, 타교: 0, 한국: 0, 타주: 0, 장결: 0, 귀국: 0 };
 
   state.members.forEach(m => {
     if (!m.name) return; // skip blank future-registration rows
@@ -181,6 +186,12 @@ function renderSummary() {
       slots = [m.nam, m.yeo];
     }
     slots.forEach(v => {
+      // 타교/타주/귀국은 총원(=출석+결석) 집계에서 완전히 제외됩니다 — 아래 상태별
+      // 칩(타교/타주/귀국)에서만 별도로 카운트합니다. "한국"(일시 귀국)은 계속 포함됩니다.
+      if (EXCLUDE_FROM_TOTAL.indexOf(v) !== -1) {
+        tagCounts[v]++;
+        return;
+      }
       if (isPresentValue(v)) presentCount++;
       else {
         absentCount++;
@@ -189,7 +200,7 @@ function renderSummary() {
     });
   });
 
-  // 총원: 이름이 있는 남/여 칸 수를 모두 합한 전체 등록 인원
+  // 총원: 이름이 있는 남/여 칸 수를 모두 합한 전체 등록 인원 (타교/타주/귀국 제외)
   const totalCount = presentCount + absentCount;
 
   const extra = state.extra || { kids: 0, youth: 0, visitors: 0 };
@@ -211,7 +222,7 @@ function renderSummary() {
   const dPresent = showZero ? 0 : displayedPresent;
   const dAbsent = showZero ? 0 : absentCount;
   const dTags = showZero
-    ? { 환우: 0, 타교: 0, 한국: 0, 타주: 0, 장결: 0 }
+    ? { 환우: 0, 타교: 0, 한국: 0, 타주: 0, 장결: 0, 귀국: 0 }
     : tagCounts;
   const dEm = showZero ? 0 : emPresentCount;
 
@@ -232,6 +243,7 @@ function renderSummary() {
     <div class="chip">타주 <b>${dTags['타주']}</b></div>
     <div class="chip">장결 <b>${dTags['장결']}</b></div>
     <div class="chip">한국 <b>${dTags['한국']}</b></div>
+    <div class="chip">귀국 <b>${dTags['귀국']}</b></div>
     <div class="chip" title="201~${MAX_ID}번 EM 구역의 이번 주 출석 인원">EM <b>${dEm}</b></div>
     ${extraInputsHTML}
   `;
@@ -261,6 +273,13 @@ function buildCellHTML(memberId, gender, value, hidden) {
   return `<span class="cellbox ${cls}" data-id="${memberId}" data-gender="${gender}">${label}</span>`;
 }
 
+// True if either of the member's applicable status slots is 타교/타주/귀국 —
+// used to color the whole name red (couples can't be split visually since
+// their name is one combined text, so either spouse triggers it for the row).
+function hasExcludedStatus(m) {
+  return EXCLUDE_FROM_TOTAL.indexOf(m.nam) !== -1 || EXCLUDE_FROM_TOTAL.indexOf(m.yeo) !== -1;
+}
+
 function rowHTML(m) {
   const single = !m.name.includes('/');
   const hasName = !!m.name;
@@ -275,12 +294,13 @@ function rowHTML(m) {
   }
 
   const showEdit = editMode;
+  const nameClass = hasExcludedStatus(m) ? 'nameText excluded' : 'nameText';
 
   return `
   <tr>
     <td class="num">${m.id}</td>
     <td class="name">
-      <span class="nameView" style="display:${showEdit ? 'none' : ''}"><span class="nameText">${m.name}</span>${flag}</span>
+      <span class="nameView" style="display:${showEdit ? 'none' : ''}"><span class="${nameClass}">${m.name}</span>${flag}</span>
       <input class="nameEdit" style="display:${showEdit ? '' : 'none'}" data-id="${m.id}" value="${m.name}">
     </td>
     <td class="samter">
