@@ -120,6 +120,17 @@ function apiBulkSave(members) {
   });
 }
 
+// SAFETY GUARD (critical): refuses to bulk-save a roster that has gone
+// completely blank. This exists because of a real incident where a failed
+// mid-flight network refresh inside "저장 및 동기화" left state.members with
+// no named people, and the code went ahead and wrote that blank state over
+// the real roster, wiping every name/samter for the current week. Any bulk
+// write that would erase every name is almost certainly a bug, not a real
+// user action — so we block it here as a last line of defense.
+function hasAnyNamedMember(members) {
+  return Array.isArray(members) && members.some(m => m.name && m.name.trim() !== '');
+}
+
 // ---------- Rendering helpers ----------
 // 이제 빈칸은 "출석"이 아니라 "결석"으로 계산됩니다 — 명시적으로 ✓를 클릭해야
 // 출석으로 집계됩니다. (전에는 "빈칸=출석"이었습니다.)
@@ -483,6 +494,12 @@ async function resortAndSave(startId, endId, compareFn) {
   const expanded = checkAndExpandCapacity();
   renderGrid();
   renderSummary();
+
+  if (!hasAnyNamedMember(state.members)) {
+    showToast('저장을 건너뛰었습니다 — 명단이 비정상적으로 비어 보여서 안전을 위해 중단했습니다. "저장 및 동기화"를 눌러 서버 상태를 다시 확인해 주세요.');
+    return;
+  }
+
   showToast('정렬했습니다. 저장 중...');
   try {
     await apiBulkSave(state.members);
@@ -544,6 +561,9 @@ function updateReadonlyBanner() {
 }
 
 // ---------- Init & top bar wiring ----------
+// Returns true on success, false on failure — callers that chain further
+// destructive operations (like "저장 및 동기화") MUST check this and abort
+// if false, instead of proceeding with a possibly-empty state.members.
 async function loadAndRender() {
   try {
     const data = await apiGet();
@@ -566,8 +586,10 @@ async function loadAndRender() {
     renderGrid();
     renderSummary();
     updateReadonlyBanner();
+    return true;
   } catch (err) {
     showToast('서버 연결 실패: ' + err.message + ' (app.js의 CONFIG.API_URL을 확인해 주세요)');
+    return false;
   }
 }
 
@@ -615,26 +637,45 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
 // → 3) 1~200번, 201~MAX_ID번 두 구역의 빈 칸(중간에 생긴 갭)을 자동으로 압축 정리
 // → 4) 정리된 결과를 다시 저장합니다. (지난 기록을 보는 중에는 사용할 수 없습니다 —
 // 이 버튼은 "현재 주" 시트 전체를 다루는 기능이라 지난 기록에는 적용되지 않습니다.)
+//
+// 안전장치(중요): 2단계의 새로고침(loadAndRender)이 네트워크 문제 등으로 실패하면
+// 여기서 즉시 중단합니다 — 예전에는 이 실패를 무시하고 계속 진행하다가, 빈 상태를
+// 그대로 서버에 덮어써서 전체 명단이 지워지는 사고가 있었습니다. 또한 최종 저장
+// 직전에도 명단이 비정상적으로 비어있지 않은지 한 번 더 확인합니다.
 document.getElementById('syncBtn').addEventListener('click', async () => {
   if (state.readonly) {
     showToast('지난 기록을 보는 중에는 사용할 수 없습니다. "현재 주로 돌아가기"를 눌러주세요.');
     return;
   }
-  showToast('현재 화면을 서버에 저장하는 중...');
-  try {
-    await apiBulkSave(state.members);
-  } catch (err) {
-    showToast('저장 중 오류가 발생했습니다: ' + err.message);
+
+  if (hasAnyNamedMember(state.members)) {
+    showToast('현재 화면을 서버에 저장하는 중...');
+    try {
+      await apiBulkSave(state.members);
+    } catch (err) {
+      showToast('저장 중 오류가 발생했습니다: ' + err.message);
+    }
+  } else {
+    showToast('현재 화면에 이름이 없어 1단계 저장은 건너뛰고, 서버 데이터부터 다시 불러옵니다...');
   }
 
   showToast('서버에서 최신 데이터를 다시 불러옵니다...');
-  await loadAndRender();
+  const loaded = await loadAndRender();
+  if (!loaded) {
+    showToast('서버에서 최신 데이터를 불러오지 못해 동기화를 중단했습니다. 데이터는 그대로 안전합니다 — 인터넷 연결을 확인한 뒤 다시 시도해 주세요.');
+    return;
+  }
 
   resortPartition(1, 200, koreanCompare);
   resortPartition(201, MAX_ID, (a, b) => a.localeCompare(b));
   const expanded = checkAndExpandCapacity();
   renderGrid();
   renderSummary();
+
+  if (!hasAnyNamedMember(state.members)) {
+    showToast('저장을 중단했습니다 — 명단이 비정상적으로 비어 보입니다. 페이지를 새로고침해서 다시 확인해 주세요 (기존 서버 데이터는 안전합니다).');
+    return;
+  }
 
   try {
     await apiBulkSave(state.members);
