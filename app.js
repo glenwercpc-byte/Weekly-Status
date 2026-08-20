@@ -560,6 +560,33 @@ function updateReadonlyBanner() {
   }
 }
 
+// Applies a fetched week's data (from apiGetWeek) into state and re-renders —
+// shared by the 조회 button and by "새 주 시작" when it discovers the chosen
+// date already has data (see below).
+function applyFetchedWeek(dateVal, res) {
+  state.date = dateVal;
+  state.members = (res.members || []).map(m => ({
+    id: Number(m.id), name: m.name || '', samter: m.samter || '', nam: m.nam || '', yeo: m.yeo || '',
+    gender: m.gender || '',
+  }));
+  state.extra = res.extra || { kids: 0, youth: 0, visitors: 0 };
+  state.readonly = !res.isCurrent;
+  state.weekStarted = !!res.weekStarted;
+
+  const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
+  MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
+
+  editMode = false;
+  document.getElementById('editModeBtn').textContent = '편집 모드';
+  updateCurrentDateLabel();
+  renderGrid();
+  renderSummary();
+  updateReadonlyBanner();
+
+  const lookupInput = document.getElementById('lookupDate');
+  if (lookupInput) lookupInput.value = dateVal;
+}
+
 // ---------- Init & top bar wiring ----------
 // Returns true on success, false on failure — callers that chain further
 // destructive operations (like "저장 및 동기화") MUST check this and abort
@@ -609,24 +636,7 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
     if (res.error) throw new Error(res.error);
     if (!res.found) { showToast('해당 날짜의 기록을 찾을 수 없습니다.'); return; }
 
-    state.date = dateVal;
-    state.members = (res.members || []).map(m => ({
-      id: Number(m.id), name: m.name || '', samter: m.samter || '', nam: m.nam || '', yeo: m.yeo || '',
-      gender: m.gender || '',
-    }));
-    state.extra = res.extra || { kids: 0, youth: 0, visitors: 0 };
-    state.readonly = !res.isCurrent;
-    state.weekStarted = !!res.weekStarted;
-
-    const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
-    MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
-
-    editMode = false;
-    document.getElementById('editModeBtn').textContent = '편집 모드';
-    updateCurrentDateLabel();
-    renderGrid();
-    renderSummary();
-    updateReadonlyBanner();
+    applyFetchedWeek(dateVal, res);
     showToast(state.readonly ? '지난 기록을 불러왔습니다 (수정하면 그 날짜에 저장됩니다)' : '현재 주 데이터를 불러왔습니다');
   } catch (err) {
     showToast('조회 실패: ' + err.message);
@@ -687,7 +697,6 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
 
 // ---------- 새 주 시작: 간단한 인라인 달력 (조회 달력과 같은 방식) ----------
 // "새 주 시작"을 누르면 숨겨져 있던 날짜 칸이 나타나며 바로 달력이 열립니다.
-// 날짜를 고르는 즉시(별도 확인 버튼 없이) 새 주 시작이 진행됩니다.
 // (지난 기록을 보는 중에는 사용할 수 없습니다.)
 document.getElementById('newWeekBtn').addEventListener('click', () => {
   if (state.readonly) {
@@ -710,17 +719,34 @@ document.getElementById('newWeekBtn').addEventListener('click', () => {
   }
 });
 
+// 날짜를 고르면: 먼저 그 날짜에 이미 데이터가 있는지(현재 주든 지난 기록이든) 확인합니다.
+// - 이미 있으면 → 새로 시작하지 않고 조회처럼 그 데이터를 그대로 불러옵니다
+//   (지난 기록이면 편집 시 그 날짜에 저장, 현재 주와 같은 날짜면 그대로 이어서 입력 가능).
+// - 없으면 → 원래대로 "새 주 시작"을 진행해서 빈 표로 새로 만듭니다.
 document.getElementById('newWeekDateInput').addEventListener('change', async e => {
   const chosenDate = e.target.value;
   e.target.style.display = 'none';
   if (!chosenDate) return;
+
+  showToast('날짜를 확인하는 중...');
   try {
+    const check = await apiGetWeek(chosenDate);
+    if (check.error) throw new Error(check.error);
+
+    if (check.found) {
+      applyFetchedWeek(chosenDate, check);
+      showToast(state.readonly
+        ? '이미 데이터가 있는 주차라 불러왔습니다 (수정하면 그 날짜에 저장됩니다)'
+        : '이미 진행 중인 주차 데이터를 불러왔습니다');
+      return;
+    }
+
     const res = await apiNewWeek(chosenDate);
     if (res.error) throw new Error(res.error);
     showToast(`새 주(${formatDateMDY(res.newDate)}) 출석표가 준비되었습니다.`);
     await loadAndRender();
   } catch (err) {
-    showToast('새 주 시작 실패: ' + err.message);
+    showToast('처리 실패: ' + err.message);
   }
 });
 
