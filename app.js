@@ -145,20 +145,15 @@ function classifyCell(v) {
   return 'tag';
 }
 
+// 모든 상태 메시지(저장 중/완료/실패/안내 등)는 하단 토스트 대신 조회 버튼
+// 바로 오른쪽의 작은 인라인 표시(lookupStatus)에 나타납니다. 일정 시간 후
+// 자동으로 사라집니다.
 function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(t._timer);
-  t._timer = setTimeout(() => t.classList.remove('show'), 2600);
-}
-
-// Small inline status text next to the 조회 button (used for "데이터를 불러오는
-// 중..." / "날짜를 확인하는 중..." — these sit right where the action is, instead
-// of the floating bottom toast).
-function setLookupStatus(msg) {
   const el = document.getElementById('lookupStatus');
-  if (el) el.textContent = msg || '';
+  if (!el) return;
+  el.textContent = msg;
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.textContent = ''; }, 3200);
 }
 
 function formatDateMDY(dateStr) {
@@ -634,22 +629,20 @@ document.getElementById('editModeBtn').addEventListener('click', () => setEditMo
 // 현재 진행 중인 주(설정 시트의 날짜)와 같으면 편집 가능한 상태 그대로 불러오고,
 // 지난 주(기록 시트에 보관된 스냅샷)라면 "지난 기록 보기"로 불러오되, 이제는
 // 그 화면에서 칸을 클릭/수정하면(유초등부/중고등부/방문자 포함) 기록 시트의
-// 해당 날짜 데이터에 바로 저장됩니다.
-// "데이터를 불러오는 중..." 표시는 조회 버튼 바로 오른쪽(lookupStatus)에 나타납니다.
+// 해당 날짜 데이터에 바로 저장됩니다. 모든 상태 메시지는 showToast를 통해
+// 조회 버튼 옆(lookupStatus)에 나타납니다.
 document.getElementById('lookupBtn').addEventListener('click', async () => {
   const dateVal = document.getElementById('lookupDate').value;
   if (!dateVal) { showToast('조회할 날짜를 먼저 선택해 주세요.'); return; }
-  setLookupStatus('데이터를 불러오는 중...');
+  showToast('데이터를 불러오는 중...');
   try {
     const res = await apiGetWeek(dateVal);
     if (res.error) throw new Error(res.error);
-    if (!res.found) { setLookupStatus(''); showToast('해당 날짜의 기록을 찾을 수 없습니다.'); return; }
+    if (!res.found) { showToast('해당 날짜의 기록을 찾을 수 없습니다.'); return; }
 
     applyFetchedWeek(dateVal, res);
-    setLookupStatus('');
     showToast(state.readonly ? '지난 기록을 불러왔습니다 (수정하면 그 날짜에 저장됩니다)' : '현재 주 데이터를 불러왔습니다');
   } catch (err) {
-    setLookupStatus('');
     showToast('조회 실패: ' + err.message);
   }
 });
@@ -731,7 +724,6 @@ document.getElementById('newWeekBtn').addEventListener('click', () => {
 });
 
 // 날짜를 고르면: 먼저 그 날짜에 이미 데이터가 있는지(현재 주든 지난 기록이든) 확인합니다.
-// ("날짜를 확인하는 중..." 표시도 조회 버튼 옆 lookupStatus에 나타납니다.)
 // - 이미 있으면 → 새로 시작하지 않고 조회처럼 그 데이터를 그대로 불러옵니다
 //   (지난 기록이면 편집 시 그 날짜에 저장, 현재 주와 같은 날짜면 그대로 이어서 입력 가능).
 // - 없으면 → "데이터를 입력하시겠습니까?" 확인을 먼저 받고, 네라고 답할 때만
@@ -741,10 +733,9 @@ document.getElementById('newWeekDateInput').addEventListener('change', async e =
   e.target.style.display = 'none';
   if (!chosenDate) return;
 
-  setLookupStatus('날짜를 확인하는 중...');
+  showToast('날짜를 확인하는 중...');
   try {
     const check = await apiGetWeek(chosenDate);
-    setLookupStatus('');
     if (check.error) throw new Error(check.error);
 
     if (check.found) {
@@ -763,7 +754,6 @@ document.getElementById('newWeekDateInput').addEventListener('change', async e =
     showToast(`새 주(${formatDateMDY(res.newDate)}) 출석표가 준비되었습니다.`);
     await loadAndRender();
   } catch (err) {
-    setLookupStatus('');
     showToast('처리 실패: ' + err.message);
   }
 });
