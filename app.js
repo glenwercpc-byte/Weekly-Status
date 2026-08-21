@@ -193,6 +193,9 @@ function renderSummary() {
 
   state.members.forEach(m => {
     if (!m.name) return; // skip blank future-registration rows
+    // EM 구역(201번 이상)은 총원/출석/결석 집계에서 완전히 제외됩니다 —
+    // 별도의 "EM" 칩(countEmPresent)에서만 따로 집계됩니다.
+    if (m.id >= 201) return;
     const single = !m.name.includes('/');
     let slots;
     if (single) {
@@ -216,7 +219,7 @@ function renderSummary() {
     });
   });
 
-  // 총원: 이름이 있는 남/여 칸 수를 모두 합한 전체 등록 인원 (타교/타주/귀국 제외)
+  // 총원: 이름이 있는 남/여 칸 수를 모두 합한 전체 등록 인원 (EM 구역, 타교/타주/귀국 제외)
   const totalCount = presentCount + absentCount;
 
   const extra = state.extra || { kids: 0, youth: 0, visitors: 0 };
@@ -224,8 +227,9 @@ function renderSummary() {
   const youth = Number(extra.youth) || 0;
   const visitors = Number(extra.visitors) || 0;
 
-  // 출석 표시 숫자에 유초등부/중고등부/방문자 인원을 더함
-  const displayedPresent = presentCount + kids + youth + visitors;
+  // 출석 표시 숫자에는 방문자만 더합니다 — 유,초등부/중고등부/EM은 각자 따로
+  // 카운트되므로(별도 칩) 여기에는 포함하지 않습니다.
+  const displayedPresent = presentCount + visitors;
 
   // EM 칸: 상태 태그 개수가 아니라 201~MAX_ID EM 구역의 이번 주 출석 인원 수
   const emPresentCount = countEmPresent();
