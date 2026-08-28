@@ -113,6 +113,13 @@ async function apiGetHistory() {
   return jsonp(CONFIG.API_URL + '?action=history');
 }
 
+// Lightweight: just the archived dates, no member/extra data. Used on every
+// page load to figure out "what's the most recent saved week" without the
+// cost of transferring every archived week's full roster each time.
+async function apiGetHistoryDates() {
+  return jsonp(CONFIG.API_URL + '?action=historydates');
+}
+
 async function apiGetWeek(dateStr) {
   return jsonp(CONFIG.API_URL + '?action=getweek&date=' + encodeURIComponent(dateStr));
 }
@@ -610,6 +617,12 @@ function applyFetchedWeek(dateVal, res) {
 // 시트의 날짜만 믿지 않고, 기록 시트에 더 최근 주차가 있으면 그쪽을 우선해서
 // 보여줍니다. "등록 주일 선택" 버튼은 이 최근 날짜를 기준으로 다음 주(+7일)
 // 또는 원하는 날짜의 입력 화면을 여는 역할을 합니다.
+//
+// 가벼운 확인용으로 apiGetHistoryDates()(날짜 목록만)를 쓰고, 실제 데이터가
+// 필요한 경우에만 apiGetWeek()으로 그 주차만 따로 불러옵니다 — 예전에는 이
+// 확인을 위해 기록 전체(모든 주차의 명단 데이터)를 매번 통으로 불러왔는데,
+// 기록이 쌓일수록 느려지고 타임아웃으로 "서버 연결 실패"가 나기도 했습니다.
+//
 // Returns true on success, false on failure — callers that chain further
 // destructive operations (like "저장 및 동기화") MUST check this and abort
 // if false, instead of proceeding with a possibly-empty state.members.
@@ -619,9 +632,9 @@ async function loadAndRender() {
     if (data.error) throw new Error(data.error);
 
     let latestDate = data.date || '';
-    const hist = await apiGetHistory();
-    if (!hist.error && hist.weeks && hist.weeks.length) {
-      const lastHistDate = hist.weeks[hist.weeks.length - 1].date;
+    const histDates = await apiGetHistoryDates();
+    if (!histDates.error && histDates.dates && histDates.dates.length) {
+      const lastHistDate = histDates.dates[histDates.dates.length - 1];
       if (!latestDate || lastHistDate > latestDate) {
         latestDate = lastHistDate;
       }
