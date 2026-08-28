@@ -579,16 +579,14 @@ function setEditMode(on) {
   renderGrid();
 }
 
+// 지난 기록(또는 방금 만든 빈 지난 주)을 보는 중임을 알려주는 배너 — 별도의
+// "돌아가기" 버튼은 없습니다. "저장 및 동기화"나 "등록 주일 선택"을 누르면
+// 자동으로 최신 주로 돌아간 뒤 진행되므로 굳이 필요하지 않습니다.
 function updateReadonlyBanner() {
   const el = document.getElementById('readonlyBanner');
   if (state.readonly) {
     el.style.display = 'flex';
-    el.innerHTML = `📅 지난 기록 보기: ${formatDateMDY(state.date)} — 수정하면 그 날짜의 기록에 바로 저장됩니다 <button class="btn" id="backToCurrentBtn">현재 주로 돌아가기</button>`;
-    document.getElementById('backToCurrentBtn').addEventListener('click', async () => {
-      state.readonly = false;
-      await loadAndRender();
-      updateReadonlyBanner();
-    });
+    el.innerHTML = `📅 지난 기록 보기: ${formatDateMDY(state.date)} — 수정하면 그 날짜의 기록에 바로 저장됩니다`;
   } else {
     el.style.display = 'none';
     el.innerHTML = '';
@@ -686,19 +684,22 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
   }
 });
 
-// "저장 및 동기화": 1) 현재 화면을 먼저 저장 → 2) 서버 최신 상태를 다시 불러오고
-// → 3) 1~200번, 201~MAX_ID번 두 구역의 빈 칸(중간에 생긴 갭)을 자동으로 압축 정리
-// → 4) 정리된 결과를 다시 저장합니다. (지난 기록을 보는 중에는 사용할 수 없습니다 —
-// 이 버튼은 "현재 주" 시트 전체를 다루는 기능이라 지난 기록에는 적용되지 않습니다.)
+// "저장 및 동기화": 지난 기록을 보는 중이면, 먼저 자동으로 최신 주로 돌아간
+// 뒤(loadAndRender) 이어서 진행합니다 — 예전처럼 "지난 기록 보는 중에는 사용할
+// 수 없습니다" 라고 막고 별도 버튼을 누르게 하지 않습니다.
+// 순서: 1) 최신 주로 돌아가기(필요시) → 2) 현재 화면을 저장 → 3) 서버 최신
+// 상태를 다시 불러오고 → 4) 1~200번, 201~MAX_ID번 두 구역의 빈 칸(중간에 생긴
+// 갭)을 자동으로 압축 정리 → 5) 정리된 결과를 다시 저장합니다.
 //
-// 안전장치(중요): 2단계의 새로고침(loadAndRender)이 네트워크 문제 등으로 실패하면
+// 안전장치(중요): 3단계의 새로고침(loadAndRender)이 네트워크 문제 등으로 실패하면
 // 여기서 즉시 중단합니다 — 예전에는 이 실패를 무시하고 계속 진행하다가, 빈 상태를
 // 그대로 서버에 덮어써서 전체 명단이 지워지는 사고가 있었습니다. 또한 최종 저장
 // 직전에도 명단이 비정상적으로 비어있지 않은지 한 번 더 확인합니다.
 document.getElementById('syncBtn').addEventListener('click', async () => {
   if (state.readonly) {
-    showToast('지난 기록을 보는 중에는 사용할 수 없습니다. "현재 주로 돌아가기"를 눌러주세요.');
-    return;
+    showToast('최신 주로 돌아가는 중...');
+    const backOk = await loadAndRender();
+    if (!backOk) return;
   }
 
   if (hasAnyNamedMember(state.members)) {
@@ -741,11 +742,13 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
 // ---------- 등록 주일 선택: 간단한 인라인 달력 ----------
 // 버튼을 누르면 숨겨져 있던 날짜 칸이 나타나며 바로 달력이 열립니다.
 // 기본값은 화면에 지금 떠 있는(=가장 최근) 날짜 + 7일입니다.
-// (지난 기록을 보는 중에는 사용할 수 없습니다.)
-document.getElementById('newWeekBtn').addEventListener('click', () => {
+// 지난 기록을 보는 중이면, 먼저 자동으로 최신 주로 돌아간 뒤(그 날짜를
+// 기준으로 +7일 계산) 달력을 엽니다 — 별도로 돌아가는 버튼을 누를 필요가 없습니다.
+document.getElementById('newWeekBtn').addEventListener('click', async () => {
   if (state.readonly) {
-    showToast('지난 기록을 보는 중에는 사용할 수 없습니다. "현재 주로 돌아가기"를 눌러주세요.');
-    return;
+    showToast('최신 주로 돌아가는 중...');
+    const ok = await loadAndRender();
+    if (!ok) return;
   }
   let nextDate = state.date;
   if (state.date) {
