@@ -169,6 +169,22 @@ function updateCurrentDateLabel() {
   if (el) el.textContent = state.date ? `이번 주: ${formatDateMDY(state.date)}` : '';
 }
 
+// Turns a raw {members, extra, ...} API payload into state fields. Shared by
+// every place that loads a week's data, so the mapping logic lives in one spot.
+function applyWeekPayload(dateVal, payload, isCurrentWeek) {
+  state.date = dateVal;
+  state.members = (payload.members || []).map(m => ({
+    id: Number(m.id), name: m.name || '', samter: m.samter || '', nam: m.nam || '', yeo: m.yeo || '',
+    gender: m.gender || '',
+  }));
+  state.extra = payload.extra || { kids: 0, youth: 0, visitors: 0 };
+  state.readonly = !isCurrentWeek;
+  state.weekStarted = !!payload.weekStarted;
+
+  const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
+  MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
+}
+
 // Counts how many of the 201~MAX_ID EM-section members are currently present.
 function countEmPresent() {
   let count = 0;
@@ -571,17 +587,7 @@ function updateReadonlyBanner() {
 // shared by the 조회 button and by "새 주 시작" when it discovers the chosen
 // date already has data (see below).
 function applyFetchedWeek(dateVal, res) {
-  state.date = dateVal;
-  state.members = (res.members || []).map(m => ({
-    id: Number(m.id), name: m.name || '', samter: m.samter || '', nam: m.nam || '', yeo: m.yeo || '',
-    gender: m.gender || '',
-  }));
-  state.extra = res.extra || { kids: 0, youth: 0, visitors: 0 };
-  state.readonly = !res.isCurrent;
-  state.weekStarted = !!res.weekStarted;
-
-  const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
-  MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
+  applyWeekPayload(dateVal, res, !!res.isCurrent);
 
   editMode = false;
   document.getElementById('editModeBtn').textContent = '편집 모드';
@@ -595,6 +601,11 @@ function applyFetchedWeek(dateVal, res) {
 }
 
 // ---------- Init & top bar wiring ----------
+// 메인 화면은 항상 "가장 최근에 실제로 저장된 주"를 보여줍니다 — 단순히 설정
+// 시트의 날짜만 믿지 않고, 기록 시트에 더 최근 주차가 있으면(예: 예전에 새 주
+// 시작이 제대로 반영되지 않았던 경우) 그쪽을 우선해서 보여줍니다. "새 주 시작"
+// 버튼은 이 최근 날짜를 기준으로 다음 주(+7일) 또는 원하는 날짜의 입력 화면을
+// 여는 역할을 합니다.
 // Returns true on success, false on failure — callers that chain further
 // destructive operations (like "저장 및 동기화") MUST check this and abort
 // if false, instead of proceeding with a possibly-empty state.members.
@@ -602,19 +613,28 @@ async function loadAndRender() {
   try {
     const data = await apiGet();
     if (data.error) throw new Error(data.error);
-    state.date = data.date || '';
-    state.members = (data.members || []).map(m => ({
-      id: Number(m.id), name: m.name || '', samter: m.samter || '', nam: m.nam || '', yeo: m.yeo || '',
-      gender: m.gender || '',
-    }));
-    state.extra = data.extra || { kids: 0, youth: 0, visitors: 0 };
-    state.readonly = false;
-    state.weekStarted = !!data.weekStarted;
-    // keep MAX_ID in sync with however many rows the sheet actually has
-    const highestId = state.members.reduce((max, m) => Math.max(max, m.id), 240);
-    MAX_ID = Math.max(240, Math.ceil(highestId / 20) * 20);
+
+    let latestDate = data.date || '';
+    const hist = await apiGetHistory();
+    if (!hist.error && hist.weeks && hist.weeks.length) {
+      const lastHistDate = hist.weeks[hist.weeks.length - 1].date;
+      if (!latestDate || lastHistDate > latestDate) {
+        latestDate = lastHistDate;
+      }
+    }
+
+    if (!latestDate || latestDate === data.date) {
+      // 아무 데이터도 없거나, 설정 시트의 현재 주가 곧 최신 주인 일반적인 경우.
+      applyWeekPayload(data.date || '', data, true);
+    } else {
+      // 기록 시트에 설정 시트보다 더 최근 주차가 있음 — 그쪽을 메인 화면에 띄웁니다.
+      const res = await apiGetWeek(latestDate);
+      if (res.error || !res.found) throw new Error('최근 주차 데이터를 불러오지 못했습니다');
+      applyWeekPayload(latestDate, res, !!res.isCurrent);
+    }
+
     updateCurrentDateLabel();
-    // conveniently default the lookup date to the current week's date too
+    // conveniently default the lookup date to the currently-shown week too
     const lookupInput = document.getElementById('lookupDate');
     if (lookupInput && !lookupInput.value) lookupInput.value = state.date;
     renderGrid();
@@ -705,6 +725,7 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
 
 // ---------- 새 주 시작: 간단한 인라인 달력 (조회 달력과 같은 방식) ----------
 // "새 주 시작"을 누르면 숨겨져 있던 날짜 칸이 나타나며 바로 달력이 열립니다.
+// 기본값은 화면에 지금 떠 있는(=가장 최근) 날짜 + 7일입니다.
 // (지난 기록을 보는 중에는 사용할 수 없습니다.)
 document.getElementById('newWeekBtn').addEventListener('click', () => {
   if (state.readonly) {
@@ -731,7 +752,8 @@ document.getElementById('newWeekBtn').addEventListener('click', () => {
 // - 이미 있으면 → 새로 시작하지 않고 조회처럼 그 데이터를 그대로 불러옵니다
 //   (지난 기록이면 편집 시 그 날짜에 저장, 현재 주와 같은 날짜면 그대로 이어서 입력 가능).
 // - 없으면 → "데이터를 입력하시겠습니까?" 확인을 먼저 받고, 네라고 답할 때만
-//   빈 표로 새 주를 시작합니다. 취소하면 아무 일도 일어나지 않습니다.
+//   빈 표로 새 주를 시작합니다(=그 날짜가 새로운 "현재 주"가 됩니다). 취소하면
+//   아무 일도 일어나지 않습니다.
 document.getElementById('newWeekDateInput').addEventListener('change', async e => {
   const chosenDate = e.target.value;
   e.target.style.display = 'none';
