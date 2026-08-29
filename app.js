@@ -579,9 +579,7 @@ function setEditMode(on) {
   renderGrid();
 }
 
-// 지난 기록/새로 만든 빈 주를 보는 중이어도 별도 배너는 더 이상 표시하지
-// 않습니다 — 저장/등록 관련 버튼들이 알아서 최신 주로 돌아간 뒤 진행되므로
-// 굳이 안내가 필요 없다고 판단했습니다.
+// 지난 기록/새로 만든 빈 주를 보는 중이어도 별도 배너는 표시하지 않습니다.
 function updateReadonlyBanner() {
   const el = document.getElementById('readonlyBanner');
   if (!el) return;
@@ -589,9 +587,7 @@ function updateReadonlyBanner() {
   el.innerHTML = '';
 }
 
-// Applies a fetched week's data (from apiGetWeek) into state and re-renders —
-// shared by the 조회 button and by "등록 주일 선택" when it discovers the
-// chosen date already has data (see below).
+// Applies a fetched week's data (from apiGetWeek) into state and re-renders.
 function applyFetchedWeek(dateVal, res) {
   applyWeekPayload(dateVal, res, !!res.isCurrent);
 
@@ -609,13 +605,10 @@ function applyFetchedWeek(dateVal, res) {
 // ---------- Init & top bar wiring ----------
 // 메인 화면은 항상 "가장 최근에 실제로 저장된 주"를 보여줍니다 — 단순히 설정
 // 시트의 날짜만 믿지 않고, 기록 시트에 더 최근 주차가 있으면 그쪽을 우선해서
-// 보여줍니다. "등록 주일 선택" 버튼은 이 최근 날짜를 기준으로 다음 주(+7일)
-// 또는 원하는 날짜의 입력 화면을 여는 역할을 합니다.
+// 보여줍니다.
 //
 // 가벼운 확인용으로 apiGetHistoryDates()(날짜 목록만)를 쓰고, 실제 데이터가
-// 필요한 경우에만 apiGetWeek()으로 그 주차만 따로 불러옵니다 — 예전에는 이
-// 확인을 위해 기록 전체(모든 주차의 명단 데이터)를 매번 통으로 불러왔는데,
-// 기록이 쌓일수록 느려지고 타임아웃으로 "서버 연결 실패"가 나기도 했습니다.
+// 필요한 경우에만 apiGetWeek()으로 그 주차만 따로 불러옵니다.
 //
 // Returns true on success, false on failure — callers that chain further
 // destructive operations (like "저장 및 동기화") MUST check this and abort
@@ -645,8 +638,7 @@ async function loadAndRender() {
     }
 
     updateCurrentDateLabel();
-    // 조회 날짜 칸은 항상 지금 화면에 떠 있는 날짜로 맞춰줍니다 (예전 조회
-    // 기록이 남아 있지 않도록, 비어있을 때만이 아니라 매번 갱신합니다).
+    // 조회 날짜 칸은 항상 지금 화면에 떠 있는 날짜로 맞춰줍니다.
     const lookupInput = document.getElementById('lookupDate');
     if (lookupInput) lookupInput.value = state.date;
     renderGrid();
@@ -661,23 +653,58 @@ async function loadAndRender() {
 
 document.getElementById('editModeBtn').addEventListener('click', () => setEditMode(!editMode));
 
-// 날짜 옆 "조회" 버튼: 별도의 "조회 전용" 날짜 칸(lookupDate)의 값을 사용합니다.
-// 어떤 주차든(현재 진행 중이든 지난 기록이든) 그 자리에서 바로 칸을 클릭/수정하면
-// 즉시 저장됩니다 — 지난 기록은 그 날짜의 "기록" 시트 항목에 바로 저장됩니다.
-// 모든 상태 메시지는 showToast를 통해 조회 버튼 옆(lookupStatus)에 나타납니다.
+// "조회 및 새 출결 등록" 버튼: 하나의 버튼이 두 가지 역할을 모두 합니다.
+// 1) 이미 데이터가 있는 날짜 → 그대로 불러옵니다(현재 주면 편집 가능, 지난
+//    기록이면 그 자리에서 수정 시 그 날짜에 바로 저장).
+// 2) 데이터가 없는 날짜(과거든 미래든) → "새로 입력하시겠습니까?" 확인 후
+//    - 예 → 빈 출석 화면으로 바로 전환합니다. 선택한 날짜가 지금 진행 중인
+//      주와 같거나 미래면 그 주로 전환(현재 주는 기록으로 보관), 과거의
+//      빈 주일이면 지금 진행 중인 주는 전혀 건드리지 않고 "기록" 시트에만
+//      새 빈 항목을 만듭니다.
+//    - 아니오 → 화면은 그대로 유지됩니다.
 document.getElementById('lookupBtn').addEventListener('click', async () => {
   const dateVal = document.getElementById('lookupDate').value;
-  if (!dateVal) { showToast('조회할 날짜를 먼저 선택해 주세요.'); return; }
-  showToast('데이터를 불러오는 중...');
+  if (!dateVal) { showToast('날짜를 먼저 선택해 주세요.'); return; }
+  showToast('데이터를 확인하는 중...');
   try {
     const res = await apiGetWeek(dateVal);
     if (res.error) throw new Error(res.error);
-    if (!res.found) { showToast('해당 날짜의 기록을 찾을 수 없습니다.'); return; }
 
-    applyFetchedWeek(dateVal, res);
-    showToast(state.readonly ? '지난 기록을 불러왔습니다 (수정하면 그 날짜에 바로 저장됩니다)' : '현재 주 데이터를 불러왔습니다');
+    if (res.found) {
+      applyFetchedWeek(dateVal, res);
+      showToast(state.readonly ? '지난 기록을 불러왔습니다 (수정하면 그 날짜에 바로 저장됩니다)' : '현재 주 데이터를 불러왔습니다');
+      return;
+    }
+
+    const proceed = confirm(`${formatDateMDY(dateVal)}에는 데이터가 없습니다.\n새로 입력하시겠습니까?`);
+    if (!proceed) {
+      showToast('취소했습니다 — 화면은 그대로입니다.');
+      return;
+    }
+
+    // 실제 "현재 진행 중인 주" 날짜를 확인해서, 선택한 날짜가 그보다
+    // 미래(또는 같은 날)인지 과거인지에 따라 처리 방식을 나눕니다.
+    const cur = await apiGet();
+    if (cur.error) throw new Error(cur.error);
+    const isFutureOrSame = !cur.date || dateVal >= cur.date;
+
+    if (isFutureOrSame) {
+      const newRes = await apiNewWeek(dateVal);
+      if (newRes.error) throw new Error(newRes.error);
+      showToast(`${formatDateMDY(newRes.newDate)} 출석표가 준비되었습니다.`);
+      await loadAndRender();
+    } else {
+      // 이미 지나간, 비어있는 주 — 현재 진행 중인 주는 그대로 두고 기록
+      // 시트에만 빈 항목을 새로 만들어서 바로 입력할 수 있게 합니다.
+      const created = await apiCreateBlankHistoricalWeek(dateVal);
+      if (created.error) throw new Error(created.error);
+      const loaded = await apiGetWeek(dateVal);
+      if (loaded.error || !loaded.found) throw new Error('새로 만든 기록을 불러오지 못했습니다');
+      applyFetchedWeek(dateVal, loaded);
+      showToast(`${formatDateMDY(dateVal)} 빈 출석표를 만들었습니다 — 입력하면 바로 저장됩니다.`);
+    }
   } catch (err) {
-    showToast('조회 실패: ' + err.message);
+    showToast('처리 실패: ' + err.message);
   }
 });
 
@@ -732,86 +759,6 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
     showToast('저장 및 동기화 완료 (빈 칸 정리 포함)' + (expanded ? ` — ${MAX_ID}번까지 자리를 늘렸습니다` : ''));
   } catch (err) {
     showToast('정리된 내용 저장 실패: ' + err.message);
-  }
-});
-
-// ---------- 등록 주일 선택: 간단한 인라인 달력 ----------
-// 버튼을 누르면 숨겨져 있던 날짜 칸이 나타나며 바로 달력이 열립니다.
-// 기본값은 화면에 지금 떠 있는(=가장 최근) 날짜 + 7일입니다.
-// 지난 기록을 보는 중이면, 먼저 자동으로 최신 주로 돌아간 뒤(그 날짜를
-// 기준으로 +7일 계산) 달력을 엽니다.
-document.getElementById('newWeekBtn').addEventListener('click', async () => {
-  if (state.readonly) {
-    showToast('최신 주로 돌아가는 중...');
-    const ok = await loadAndRender();
-    if (!ok) return;
-  }
-  let nextDate = state.date;
-  if (state.date) {
-    const d = new Date(state.date + 'T00:00:00');
-    d.setDate(d.getDate() + 7);
-    nextDate = d.toISOString().slice(0, 10);
-  }
-  const input = document.getElementById('newWeekDateInput');
-  input.value = nextDate;
-  input.style.display = 'inline-block';
-  if (typeof input.showPicker === 'function') {
-    input.showPicker();
-  } else {
-    input.focus();
-  }
-});
-
-// 날짜를 고르면: 먼저 그 날짜에 이미 데이터가 있는지(현재 주든 지난 기록이든) 확인합니다.
-// - 이미 있으면 → 그 데이터를 그대로 불러옵니다(조회와 동일 — 지난 기록이면 편집 시
-//   그 날짜에 바로 저장, 현재 주와 같은 날짜면 그대로 이어서 입력 가능).
-// - 없으면(과거 날짜든 미래 날짜든) → 확인 없이 바로 빈 출석표로 전환합니다:
-//     · 선택한 날짜가 현재 진행 중인 주(설정 시트 날짜)와 같거나 그 이후(미래)면
-//       → 현재 주를 기록으로 보관하고 그 날짜로 전환합니다.
-//     · 선택한 날짜가 현재 진행 중인 주보다 과거(건너뛴 지난 주일)면
-//       → 현재 진행 중인 주는 전혀 건드리지 않고, "기록" 시트에 그 날짜의
-//         빈 항목만 새로 만들어서 그 자리에서 바로 입력/저장합니다.
-document.getElementById('newWeekDateInput').addEventListener('change', async e => {
-  const chosenDate = e.target.value;
-  e.target.style.display = 'none';
-  if (!chosenDate) return;
-
-  showToast('날짜를 확인하는 중...');
-  try {
-    const check = await apiGetWeek(chosenDate);
-    if (check.error) throw new Error(check.error);
-
-    if (check.found) {
-      applyFetchedWeek(chosenDate, check);
-      showToast(state.readonly
-        ? '이미 데이터가 있는 주차라 불러왔습니다 (수정하면 그 날짜에 바로 저장됩니다)'
-        : '이미 진행 중인 주차 데이터를 불러왔습니다');
-      return;
-    }
-
-    // 실제 "현재 진행 중인 주" 날짜를 확인해서, 선택한 날짜가 그보다
-    // 미래(또는 같은 날)인지 과거인지에 따라 처리 방식을 나눕니다.
-    const cur = await apiGet();
-    if (cur.error) throw new Error(cur.error);
-    const isFutureOrSame = !cur.date || chosenDate >= cur.date;
-
-    if (isFutureOrSame) {
-      const res = await apiNewWeek(chosenDate);
-      if (res.error) throw new Error(res.error);
-      showToast(`${formatDateMDY(res.newDate)} 출석표가 준비되었습니다.`);
-      await loadAndRender();
-    } else {
-      // 이미 지나간, 비어있는 주 — 현재 진행 중인 주는 그대로 두고 기록 시트에만
-      // 빈 항목을 새로 만들어서 바로 입력할 수 있게 합니다.
-      const created = await apiCreateBlankHistoricalWeek(chosenDate);
-      if (created.error) throw new Error(created.error);
-      const loaded = await apiGetWeek(chosenDate);
-      if (loaded.error || !loaded.found) throw new Error('새로 만든 기록을 불러오지 못했습니다');
-      applyFetchedWeek(chosenDate, loaded);
-      showToast(`${formatDateMDY(chosenDate)} 빈 출석표를 만들었습니다 — 입력하면 바로 저장됩니다.`);
-    }
-  } catch (err) {
-    showToast('처리 실패: ' + err.message);
   }
 });
 
@@ -903,7 +850,7 @@ function renderAllAbsenceReport(results) {
       ${['1', '2', '3', '4+'].map(colHTML).join('')}
     </div>
     <div class="report-note">
-      "등록 주일 선택"으로 보관된 지난 주차 기록(기록 시트)과 현재 화면 데이터를 기준으로 계산했습니다. 3주 이상 결석한 사람은 1주·2주 명단에는 중복 표시되지 않고 최종 해당하는 칸에만 한 번 나타납니다.
+      "조회 및 새 출결 등록"으로 보관된 지난 주차 기록(기록 시트)과 현재 화면 데이터를 기준으로 계산했습니다. 3주 이상 결석한 사람은 1주·2주 명단에는 중복 표시되지 않고 최종 해당하는 칸에만 한 번 나타납니다.
       기록이 없는 사람(신규 등록 등)은 해당 기간만큼만 계산되며, 자동 기록이 쌓일수록 정확해집니다.
     </div>
   `;
