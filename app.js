@@ -9,7 +9,8 @@ const CONFIG = {
 // "귀국": 영구적으로 돌아오지 않는 사람 (자동 유지, 총원에서는 제외 + 이름 빨간색)
 const PERSISTENT_TAGS = ['환우', '타교', '한국', '타주', '장결', '귀국'];
 
-// 타교/타주/귀국 상태인 사람은 총원 집계에서 제외되고, 이름이 빨간색으로 표시됩니다.
+// 타교/타주/귀국 상태인 사람은 총원 집계 및 결석자 명단(자료 제출)에서도
+// 제외되고, 이름이 빨간색으로 표시됩니다.
 const EXCLUDE_FROM_TOTAL = ['타교', '타주', '귀국'];
 
 let state = { date: '', members: [], extra: { kids: 0, youth: 0, visitors: 0 }, readonly: false, weekStarted: false };
@@ -766,6 +767,7 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
 
 // Returns the (name, samter, gender-label, applicable-slot) list of "real"
 // attendance slots to track: couples => both nam & yeo; singles => whichever slot is active.
+// 타교/타주/귀국 상태인 사람(또는 슬롯)은 결석자 명단 계산에서 아예 제외합니다.
 function getTrackedSlots() {
   const slots = [];
   state.members.forEach(m => {
@@ -773,10 +775,15 @@ function getTrackedSlots() {
     const single = !m.name.includes('/');
     if (single) {
       const activeSlot = m.gender === 'nam' ? 'nam' : 'yeo';
+      if (EXCLUDE_FROM_TOTAL.indexOf(m[activeSlot]) !== -1) return;
       slots.push({ id: m.id, name: m.name, samter: m.samter || '', slot: activeSlot, label: '' });
     } else {
-      slots.push({ id: m.id, name: m.name, samter: m.samter || '', slot: 'nam', label: '(남편)' });
-      slots.push({ id: m.id, name: m.name, samter: m.samter || '', slot: 'yeo', label: '(아내)' });
+      if (EXCLUDE_FROM_TOTAL.indexOf(m.nam) === -1) {
+        slots.push({ id: m.id, name: m.name, samter: m.samter || '', slot: 'nam', label: '(남편)' });
+      }
+      if (EXCLUDE_FROM_TOTAL.indexOf(m.yeo) === -1) {
+        slots.push({ id: m.id, name: m.name, samter: m.samter || '', slot: 'yeo', label: '(아내)' });
+      }
     }
   });
   return slots;
@@ -850,13 +857,14 @@ function renderAllAbsenceReport(results) {
       ${['1', '2', '3', '4+'].map(colHTML).join('')}
     </div>
     <div class="report-note">
-      "조회 및 새 출결 등록"으로 보관된 지난 주차 기록(기록 시트)과 현재 화면 데이터를 기준으로 계산했습니다. 3주 이상 결석한 사람은 1주·2주 명단에는 중복 표시되지 않고 최종 해당하는 칸에만 한 번 나타납니다.
+      "조회 및 새 출결 등록"으로 보관된 지난 주차 기록(기록 시트)과 현재 화면 데이터를 기준으로 계산했습니다. 타교·타주·귀국 상태인 사람은 명단에서 제외됩니다. 3주 이상 결석한 사람은 1주·2주 명단에는 중복 표시되지 않고 최종 해당하는 칸에만 한 번 나타납니다.
       기록이 없는 사람(신규 등록 등)은 해당 기간만큼만 계산되며, 자동 기록이 쌓일수록 정확해집니다.
     </div>
   `;
 }
 
 // This-week-only absentees, grouped by 샘터 번호 (ascending).
+// 타교/타주/귀국 상태인 사람(슬롯)은 여기서도 제외됩니다.
 function computeBySamterReport() {
   const groupsMap = {}; // samter -> [ {name, reason} ]
 
@@ -870,6 +878,7 @@ function computeBySamterReport() {
 
     checks.forEach(({ slot, label }) => {
       const v = m[slot] || '';
+      if (EXCLUDE_FROM_TOTAL.indexOf(v) !== -1) return;
       if (!isPresentValue(v)) {
         if (!groupsMap[samterKey]) groupsMap[samterKey] = [];
         groupsMap[samterKey].push({ name: m.name + (label ? ' ' + label : ''), reason: v || 'X' });
@@ -904,7 +913,7 @@ function renderBySamterReport(groups) {
 
   document.getElementById('reportBody').innerHTML = `
     <div class="report-columns">${groups.map(colHTML).join('')}</div>
-    <div class="report-note">이번 주(${formatDateMDY(state.date)}) 현재 데이터를 기준으로 샘터 번호 순으로 정리했습니다.</div>
+    <div class="report-note">이번 주(${formatDateMDY(state.date)}) 현재 데이터를 기준으로 샘터 번호 순으로 정리했습니다 (타교·타주·귀국 제외).</div>
   `;
 }
 
