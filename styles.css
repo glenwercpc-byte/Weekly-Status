@@ -246,8 +246,10 @@ td.name input:focus{
   user-select:none;
   border:1px solid transparent;
 }
-.cellbox.blank{background:#eef1ea; color:transparent;}
-.cellbox.blank:hover{background:#e2e8dc;}
+/* 빈 칸(아직 아무것도 체크 안 된 상태)도 테두리를 넣어 항상 눈에 보이도록 함 —
+   전체가 빈 새 주에서는 이 테두리가 없으면 칸이 아예 안 보이는 것처럼 느껴짐 */
+.cellbox.blank{background:#eef1ea; color:transparent; border:1px solid #c3bda3;}
+.cellbox.blank:hover{background:#e2e8dc; border-color:#a9a288;}
 .cellbox.present{background:#e3f1e9; color:var(--present);}
 .cellbox.absent{background:#fbe7e5; color:var(--absent);}
 .cellbox.tag{background:#fbf1dc; color:#95741c; font-size:9.5px;}
