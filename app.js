@@ -159,7 +159,7 @@ function classifyCell(v) {
   return 'tag';
 }
 
-// 모든 상태 메시지(저장 중/완료/실패/안내 등)는 하단 토스트 대신 조회 버튼
+// 모든 상태 메시지(저장 중/완료/실패/안내 등)는 하단 토스트 대신 조회 날짜 칸
 // 바로 오른쪽의 작은 인라인 표시(lookupStatus)에 나타납니다. 일정 시간 후
 // 자동으로 사라집니다.
 function showToast(msg) {
@@ -654,18 +654,19 @@ async function loadAndRender() {
 
 document.getElementById('editModeBtn').addEventListener('click', () => setEditMode(!editMode));
 
-// "조회 및 새 출결 등록" 버튼: 하나의 버튼이 두 가지 역할을 모두 합니다.
+// 날짜 칸에서 날짜를 고르면(change) 별도 버튼 없이 그 즉시 조회/새 출결 등록이
+// 진행됩니다. 하는 일은 두 가지입니다.
 // 1) 이미 데이터가 있는 날짜 → 그대로 불러옵니다(현재 주면 편집 가능, 지난
 //    기록이면 그 자리에서 수정 시 그 날짜에 바로 저장).
-// 2) 데이터가 없는 날짜(과거든 미래든) → "새로 입력하시겠습니까?" 확인 후
+// 2) 데이터가 없는 날짜(과거든 미래든) → "새로 출결을 입력하시겠습니까?" 확인 후
 //    - 예 → 빈 출석 화면으로 바로 전환합니다. 선택한 날짜가 지금 진행 중인
 //      주와 같거나 미래면 그 주로 전환(현재 주는 기록으로 보관), 과거의
 //      빈 주일이면 지금 진행 중인 주는 전혀 건드리지 않고 "기록" 시트에만
 //      새 빈 항목을 만듭니다.
-//    - 아니오 → 화면은 그대로 유지됩니다.
-document.getElementById('lookupBtn').addEventListener('click', async () => {
-  const dateVal = document.getElementById('lookupDate').value;
-  if (!dateVal) { showToast('날짜를 먼저 선택해 주세요.'); return; }
+//    - 아니오 → 화면은 그대로 유지됩니다 (날짜 칸만 원래대로 되돌립니다).
+document.getElementById('lookupDate').addEventListener('change', async e => {
+  const dateVal = e.target.value;
+  if (!dateVal) return;
   showToast('데이터를 확인하는 중...');
   try {
     const res = await apiGetWeek(dateVal);
@@ -677,8 +678,9 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
       return;
     }
 
-    const proceed = confirm(`${formatDateMDY(dateVal)}에는 데이터가 없습니다.\n새로 입력하시겠습니까?`);
+    const proceed = confirm(`${formatDateMDY(dateVal)}에는 데이터가 없습니다.\n새로 출결을 입력하시겠습니까?`);
     if (!proceed) {
+      e.target.value = state.date; // 취소하면 날짜 칸도 원래 보던 날짜로 되돌립니다.
       showToast('취소했습니다 — 화면은 그대로입니다.');
       return;
     }
@@ -857,7 +859,7 @@ function renderAllAbsenceReport(results) {
       ${['1', '2', '3', '4+'].map(colHTML).join('')}
     </div>
     <div class="report-note">
-      "조회 및 새 출결 등록"으로 보관된 지난 주차 기록(기록 시트)과 현재 화면 데이터를 기준으로 계산했습니다. 타교·타주·귀국 상태인 사람은 명단에서 제외됩니다. 3주 이상 결석한 사람은 1주·2주 명단에는 중복 표시되지 않고 최종 해당하는 칸에만 한 번 나타납니다.
+      "조회"로 보관된 지난 주차 기록(기록 시트)과 현재 화면 데이터를 기준으로 계산했습니다. 타교·타주·귀국 상태인 사람은 명단에서 제외됩니다. 3주 이상 결석한 사람은 1주·2주 명단에는 중복 표시되지 않고 최종 해당하는 칸에만 한 번 나타납니다.
       기록이 없는 사람(신규 등록 등)은 해당 기간만큼만 계산되며, 자동 기록이 쌓일수록 정확해집니다.
     </div>
   `;
