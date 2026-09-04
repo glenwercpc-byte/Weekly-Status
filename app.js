@@ -159,9 +159,8 @@ function classifyCell(v) {
   return 'tag';
 }
 
-// 모든 상태 메시지(저장 중/완료/실패/안내 등)는 하단 토스트 대신 조회 날짜 칸
-// 바로 오른쪽의 작은 인라인 표시(lookupStatus)에 나타납니다. 일정 시간 후
-// 자동으로 사라집니다.
+// 짧게 스쳐가는 상태 메시지(저장 중/실패/안내 등)는 조회 날짜 칸 바로 오른쪽의
+// 작은 인라인 표시(lookupStatus)에 나타났다가 일정 시간 후 자동으로 사라집니다.
 function showToast(msg) {
   const el = document.getElementById('lookupStatus');
   if (!el) return;
@@ -170,12 +169,35 @@ function showToast(msg) {
   el._timer = setTimeout(() => { el.textContent = ''; }, 3200);
 }
 
+// 지금 화면에 어떤 날짜가 떠 있는지 알려주는 라벨은 자동으로 사라지지 않고,
+// 다른 날짜를 고르기 전까지 계속 보입니다 (showToast와 달리 타이머가 없습니다).
+function setLookupLabel(msg) {
+  const el = document.getElementById('lookupStatus');
+  if (!el) return;
+  clearTimeout(el._timer);
+  el.textContent = msg;
+}
+
+function showCurrentDateLabel() {
+  if (!state.date) return;
+  setLookupLabel(`${formatDateKoreanMD(state.date)} 출석 데이터입니다.`);
+}
+
 function formatDateMDY(dateStr) {
   if (!dateStr) return '';
   const parts = dateStr.split('-');
   if (parts.length !== 3) return dateStr;
   const [y, m, d] = parts;
   return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
+}
+
+// "8월 16일" 형식 — 조회 결과를 계속 보여주는 라벨에 사용합니다.
+function formatDateKoreanMD(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [y, m, d] = parts;
+  return `${parseInt(m, 10)}월 ${parseInt(d, 10)}일`;
 }
 
 function updateCurrentDateLabel() {
@@ -608,19 +630,19 @@ function applyFetchedWeek(dateVal, res) {
 // 시트의 날짜만 믿지 않고, 기록 시트에 더 최근 주차가 있으면 그쪽을 우선해서
 // 보여줍니다.
 //
-// 가벼운 확인용으로 apiGetHistoryDates()(날짜 목록만)를 쓰고, 실제 데이터가
-// 필요한 경우에만 apiGetWeek()으로 그 주차만 따로 불러옵니다.
+// 속도 개선: apiGet()(현재 주 전체 데이터)과 apiGetHistoryDates()(날짜 목록만)를
+// 순서대로 기다리지 않고 동시에 요청합니다(Promise.all) — 초기 로딩이 두 번의
+// 왕복 시간을 다 합친 것만큼 걸리던 걸, 더 느린 쪽 하나만큼으로 줄여줍니다.
 //
 // Returns true on success, false on failure — callers that chain further
 // destructive operations (like "저장 및 동기화") MUST check this and abort
 // if false, instead of proceeding with a possibly-empty state.members.
 async function loadAndRender() {
   try {
-    const data = await apiGet();
+    const [data, histDates] = await Promise.all([apiGet(), apiGetHistoryDates()]);
     if (data.error) throw new Error(data.error);
 
     let latestDate = data.date || '';
-    const histDates = await apiGetHistoryDates();
     if (!histDates.error && histDates.dates && histDates.dates.length) {
       const lastHistDate = histDates.dates[histDates.dates.length - 1];
       if (!latestDate || lastHistDate > latestDate) {
@@ -645,6 +667,7 @@ async function loadAndRender() {
     renderGrid();
     renderSummary();
     updateReadonlyBanner();
+    showCurrentDateLabel();
     return true;
   } catch (err) {
     showToast('서버 연결 실패: ' + err.message + ' (app.js의 CONFIG.API_URL을 확인해 주세요)');
@@ -664,6 +687,8 @@ document.getElementById('editModeBtn').addEventListener('click', () => setEditMo
 //      빈 주일이면 지금 진행 중인 주는 전혀 건드리지 않고 "기록" 시트에만
 //      새 빈 항목을 만듭니다.
 //    - 아니오 → 화면은 그대로 유지됩니다 (날짜 칸만 원래대로 되돌립니다).
+// 결과 메시지("8월 16일 출석 데이터입니다.")는 showToast와 달리 자동으로
+// 사라지지 않고, 다른 날짜를 고르기 전까지 계속 보입니다(setLookupLabel).
 document.getElementById('lookupDate').addEventListener('change', async e => {
   const dateVal = e.target.value;
   if (!dateVal) return;
@@ -674,14 +699,14 @@ document.getElementById('lookupDate').addEventListener('change', async e => {
 
     if (res.found) {
       applyFetchedWeek(dateVal, res);
-      showToast(state.readonly ? '지난 기록을 불러왔습니다 (수정하면 그 날짜에 바로 저장됩니다)' : '현재 주 데이터를 불러왔습니다');
+      showCurrentDateLabel();
       return;
     }
 
     const proceed = confirm(`${formatDateMDY(dateVal)}에는 데이터가 없습니다.\n새로 출결을 입력하시겠습니까?`);
     if (!proceed) {
       e.target.value = state.date; // 취소하면 날짜 칸도 원래 보던 날짜로 되돌립니다.
-      showToast('취소했습니다 — 화면은 그대로입니다.');
+      showCurrentDateLabel();
       return;
     }
 
@@ -694,8 +719,8 @@ document.getElementById('lookupDate').addEventListener('change', async e => {
     if (isFutureOrSame) {
       const newRes = await apiNewWeek(dateVal);
       if (newRes.error) throw new Error(newRes.error);
-      showToast(`${formatDateMDY(newRes.newDate)} 출석표가 준비되었습니다.`);
       await loadAndRender();
+      showCurrentDateLabel();
     } else {
       // 이미 지나간, 비어있는 주 — 현재 진행 중인 주는 그대로 두고 기록
       // 시트에만 빈 항목을 새로 만들어서 바로 입력할 수 있게 합니다.
@@ -704,7 +729,7 @@ document.getElementById('lookupDate').addEventListener('change', async e => {
       const loaded = await apiGetWeek(dateVal);
       if (loaded.error || !loaded.found) throw new Error('새로 만든 기록을 불러오지 못했습니다');
       applyFetchedWeek(dateVal, loaded);
-      showToast(`${formatDateMDY(dateVal)} 빈 출석표를 만들었습니다 — 입력하면 바로 저장됩니다.`);
+      showCurrentDateLabel();
     }
   } catch (err) {
     showToast('처리 실패: ' + err.message);
@@ -760,6 +785,7 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
   try {
     await apiBulkSave(state.members);
     showToast('저장 및 동기화 완료 (빈 칸 정리 포함)' + (expanded ? ` — ${MAX_ID}번까지 자리를 늘렸습니다` : ''));
+    setTimeout(showCurrentDateLabel, 3300);
   } catch (err) {
     showToast('정리된 내용 저장 실패: ' + err.message);
   }
@@ -944,6 +970,7 @@ reportMenu.querySelectorAll('.dropdown-item').forEach(btn => {
         renderBySamterReport(groups);
       }
       document.getElementById('reportOverlay').style.display = 'flex';
+      showCurrentDateLabel();
     } catch (err) {
       showToast('명단 계산 실패: ' + err.message);
     }
