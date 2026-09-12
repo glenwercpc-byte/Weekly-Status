@@ -13,9 +13,15 @@ const PERSISTENT_TAGS = ['환우', '타교', '한국', '타주', '장결', '귀�
 // 제외되고, 이름이 빨간색으로 표시됩니다.
 const EXCLUDE_FROM_TOTAL = ['타교', '타주', '귀국'];
 
+const ADMIN_PASSWORD = '1424';
+
 let state = { date: '', members: [], extra: { kids: 0, youth: 0, visitors: 0 }, readonly: false, weekStarted: false };
 let editMode = false;
 let MAX_ID = 240; // EM 구역(201~) 끝 번호 — 마지막 자리가 채워지면 자동으로 20씩 늘어납니다
+
+// 앱 진입 시 고른 모드 — 'view'(조회 전용) 또는 'admin'(전체 기능, 비밀번호 필요).
+// null인 동안은 아직 모드를 안 골라서 데이터를 불러오지 않은 상태입니다.
+let appMode = null;
 
 // ---------- JSONP helper (avoids CORS for GET reads) ----------
 function jsonp(url) {
@@ -298,11 +304,13 @@ function renderSummary() {
   const dEm = showZero ? 0 : emPresentCount;
 
   // 유초등부/중고등부/방문자는 언제든 편집 가능합니다 — 지난 기록은 saveField와
-  // 마찬가지로 해당 날짜의 기록에 바로 저장됩니다.
+  // 마찬가지로 해당 날짜의 기록에 바로 저장됩니다. (조회 모드에서는 change
+  // 이벤트에서 자체적으로 막습니다.)
+  const extraDisabled = appMode === 'view' ? 'disabled' : '';
   const extraInputsHTML = `
-    <div class="chip extra">유,초등부: <input type="number" min="0" class="extraInput" data-key="kids" value="${kids}">명</div>
-    <div class="chip extra">중고등부: <input type="number" min="0" class="extraInput" data-key="youth" value="${youth}">명</div>
-    <div class="chip extra">방문자: <input type="number" min="0" class="extraInput" data-key="visitors" value="${visitors}">명</div>
+    <div class="chip extra">유,초등부: <input type="number" min="0" class="extraInput" data-key="kids" value="${kids}" ${extraDisabled}>명</div>
+    <div class="chip extra">중고등부: <input type="number" min="0" class="extraInput" data-key="youth" value="${youth}" ${extraDisabled}>명</div>
+    <div class="chip extra">방문자: <input type="number" min="0" class="extraInput" data-key="visitors" value="${visitors}" ${extraDisabled}>명</div>
   `;
 
   document.getElementById('summaryBar').innerHTML = `
@@ -321,6 +329,7 @@ function renderSummary() {
 
   document.querySelectorAll('.extraInput').forEach(inp => {
     inp.addEventListener('change', e => {
+      if (appMode === 'view') return; // 조회 모드에서는 값을 바꿔도 저장하지 않습니다.
       const key = e.target.dataset.key;
       const val = Math.max(0, parseInt(e.target.value, 10) || 0);
       if (!state.extra) state.extra = { kids: 0, youth: 0, visitors: 0 };
@@ -357,8 +366,10 @@ function rowHTML(m) {
   let flag = '';
   let namHidden = false, yeoHidden = false;
 
-  if (single && hasName) {
+  if (single && hasName && appMode !== 'view') {
     flag = `<span class="flag" data-id="${m.id}" title="클릭해서 남/여 선택">●</span>`;
+  }
+  if (single && hasName) {
     if (m.gender === 'nam') yeoHidden = true;
     else if (m.gender === 'yeo') namHidden = true;
     // gender === '' (not yet chosen): show both until admin picks one
@@ -384,6 +395,7 @@ function rowHTML(m) {
 }
 
 function chooseGender(id, newGender) {
+  if (appMode === 'view') return;
   const m = findMember(id);
   const oldGender = m.gender || 'yeo';
   if (oldGender !== newGender) {
@@ -457,6 +469,7 @@ function findMember(id) {
 
 function onCellClear(e) {
   e.preventDefault();
+  if (appMode === 'view') return; // 조회 모드에서는 우클릭 초기화도 막습니다.
   const id = e.currentTarget.dataset.id;
   const gender = e.currentTarget.dataset.gender;
   const m = findMember(id);
@@ -467,6 +480,7 @@ function onCellClear(e) {
 }
 
 function onCellClick(e) {
+  if (appMode === 'view') return; // 조회 모드에서는 칸을 클릭해도 아무 일도 일어나지 않습니다.
   const el = e.currentTarget;
   const id = el.dataset.id;
   const gender = el.dataset.gender;
@@ -570,6 +584,7 @@ async function resortAndSave(startId, endId, compareFn) {
 function attachEditHandlers() {
   document.querySelectorAll('.nameEdit, .samterEdit').forEach(inp => {
     inp.addEventListener('change', e => {
+      if (appMode === 'view') return; // 조회 모드에서는 이름/샘터를 못 바꿉니다 (편집 모드 자체가 안 열립니다).
       const id = Number(e.target.dataset.id);
       const m = findMember(id);
       const isName = e.target.classList.contains('nameEdit');
@@ -597,6 +612,7 @@ function attachEditHandlers() {
 }
 
 function setEditMode(on) {
+  if (appMode === 'view') return;
   editMode = on;
   document.getElementById('editModeBtn').textContent = on ? '편집 완료' : '편집 모드';
   renderGrid();
@@ -624,6 +640,63 @@ function applyFetchedWeek(dateVal, res) {
   const lookupInput = document.getElementById('lookupDate');
   if (lookupInput) lookupInput.value = dateVal;
 }
+
+// ---------- 모드 선택 (조회 모드 / 관리자 모드) ----------
+// 앱을 열면 먼저 이 화면이 뜨고, 모드를 고르기 전까지는 데이터를 불러오지
+// 않습니다. "조회 모드"는 날짜별 조회만 가능하고, 자료 제출·저장 및 동기화·
+// 편집 버튼이 아예 안 보입니다(그 기능들의 진입점 자체를 감춥니다). "관리자
+// 모드"는 "교우부 전용" 비밀번호(1424)를 맞춰야 들어갈 수 있고, 전체 기능을
+// 씁니다. 비밀번호는 화면에서만 확인하며 서버로 전송하지 않습니다.
+function applyModeVisibility() {
+  const isAdmin = appMode === 'admin';
+  const reportDropdownEl = document.getElementById('reportDropdown');
+  const syncBtnEl = document.getElementById('syncBtn');
+  const editModeBtnEl = document.getElementById('editModeBtn');
+  if (reportDropdownEl) reportDropdownEl.style.display = isAdmin ? '' : 'none';
+  if (syncBtnEl) syncBtnEl.style.display = isAdmin ? '' : 'none';
+  if (editModeBtnEl) editModeBtnEl.style.display = isAdmin ? '' : 'none';
+}
+
+function enterMode(mode) {
+  appMode = mode;
+  applyModeVisibility();
+  document.getElementById('modeOverlay').style.display = 'none';
+  loadAndRender();
+}
+
+document.getElementById('modeViewBtn').addEventListener('click', () => enterMode('view'));
+
+document.getElementById('modeAdminBtn').addEventListener('click', () => {
+  const pwOverlay = document.getElementById('passwordOverlay');
+  const pwInput = document.getElementById('adminPasswordInput');
+  document.getElementById('passwordError').style.display = 'none';
+  pwInput.value = '';
+  pwOverlay.style.display = 'flex';
+  pwInput.focus();
+});
+
+function closePasswordOverlay() {
+  document.getElementById('passwordOverlay').style.display = 'none';
+}
+document.getElementById('passwordCancelBtn').addEventListener('click', closePasswordOverlay);
+document.getElementById('passwordCloseBtn').addEventListener('click', closePasswordOverlay);
+document.getElementById('passwordOverlay').addEventListener('click', e => {
+  if (e.target.id === 'passwordOverlay') closePasswordOverlay();
+});
+
+function submitAdminPassword() {
+  const val = document.getElementById('adminPasswordInput').value;
+  if (val === ADMIN_PASSWORD) {
+    closePasswordOverlay();
+    enterMode('admin');
+  } else {
+    document.getElementById('passwordError').style.display = 'block';
+  }
+}
+document.getElementById('passwordSubmitBtn').addEventListener('click', submitAdminPassword);
+document.getElementById('adminPasswordInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitAdminPassword();
+});
 
 // ---------- Init & top bar wiring ----------
 // 메인 화면은 항상 "가장 최근에 실제로 저장된 주"를 보여줍니다 — 단순히 설정
@@ -680,13 +753,11 @@ document.getElementById('editModeBtn').addEventListener('click', () => setEditMo
 // 날짜 칸에서 날짜를 고르면(change) 별도 버튼 없이 그 즉시 조회/새 출결 등록이
 // 진행됩니다. 하는 일은 두 가지입니다.
 // 1) 이미 데이터가 있는 날짜 → 그대로 불러옵니다(현재 주면 편집 가능, 지난
-//    기록이면 그 자리에서 수정 시 그 날짜에 바로 저장).
-// 2) 데이터가 없는 날짜(과거든 미래든) → "새로 출결을 입력하시겠습니까?" 확인 후
-//    - 예 → 빈 출석 화면으로 바로 전환합니다. 선택한 날짜가 지금 진행 중인
-//      주와 같거나 미래면 그 주로 전환(현재 주는 기록으로 보관), 과거의
-//      빈 주일이면 지금 진행 중인 주는 전혀 건드리지 않고 "기록" 시트에만
-//      새 빈 항목을 만듭니다.
-//    - 아니오 → 화면은 그대로 유지됩니다 (날짜 칸만 원래대로 되돌립니다).
+//    기록이면 그 자리에서 수정 시 그 날짜에 바로 저장 — 단, 조회 모드에서는
+//    수정 자체가 막혀 있으니 그냥 보여주기만 합니다).
+// 2) 데이터가 없는 날짜(과거든 미래든) → 관리자 모드에서만 "새로 출결을
+//    입력하시겠습니까?" 확인 후 빈 출석 화면으로 전환합니다. 조회 모드에서는
+//    새로 만드는 기능 자체가 없으므로 "기록이 없습니다"라고만 알려줍니다.
 // 결과 메시지("8월 16일 출석 데이터입니다.")는 showToast와 달리 자동으로
 // 사라지지 않고, 다른 날짜를 고르기 전까지 계속 보입니다(setLookupLabel).
 document.getElementById('lookupDate').addEventListener('change', async e => {
@@ -700,6 +771,12 @@ document.getElementById('lookupDate').addEventListener('change', async e => {
     if (res.found) {
       applyFetchedWeek(dateVal, res);
       showCurrentDateLabel();
+      return;
+    }
+
+    if (appMode === 'view') {
+      e.target.value = state.date;
+      showToast('해당 날짜의 기록이 없습니다.');
       return;
     }
 
@@ -746,7 +823,9 @@ document.getElementById('lookupDate').addEventListener('change', async e => {
 // 여기서 즉시 중단합니다 — 예전에는 이 실패를 무시하고 계속 진행하다가, 빈 상태를
 // 그대로 서버에 덮어써서 전체 명단이 지워지는 사고가 있었습니다. 또한 최종 저장
 // 직전에도 명단이 비정상적으로 비어있지 않은지 한 번 더 확인합니다.
+// (이 버튼은 관리자 모드에서만 보이므로, 조회 모드에서는 애초에 누를 수 없습니다.)
 document.getElementById('syncBtn').addEventListener('click', async () => {
+  if (appMode !== 'admin') return;
   if (state.readonly) {
     showToast('최신 주로 돌아가는 중...');
     const backOk = await loadAndRender();
@@ -950,6 +1029,7 @@ const reportDropdown = document.getElementById('reportDropdown');
 const reportMenu = document.getElementById('reportMenu');
 
 document.getElementById('submitReportBtn').addEventListener('click', e => {
+  if (appMode !== 'admin') return;
   e.stopPropagation();
   reportMenu.style.display = reportMenu.style.display === 'none' ? 'block' : 'none';
 });
@@ -957,6 +1037,7 @@ document.addEventListener('click', () => { reportMenu.style.display = 'none'; })
 
 reportMenu.querySelectorAll('.dropdown-item').forEach(btn => {
   btn.addEventListener('click', async e => {
+    if (appMode !== 'admin') return;
     e.stopPropagation();
     reportMenu.style.display = 'none';
     const type = btn.dataset.report;
@@ -984,4 +1065,4 @@ document.getElementById('reportOverlay').addEventListener('click', e => {
   if (e.target.id === 'reportOverlay') e.target.style.display = 'none';
 });
 
-loadAndRender();
+// 모드를 고르기 전까지는 데이터를 불러오지 않습니다 — enterMode()에서 호출합니다.
