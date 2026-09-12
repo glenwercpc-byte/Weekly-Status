@@ -8,13 +8,21 @@
 </head>
 <body>
 
-<div class="mode-overlay" id="modeOverlay">
-  <div class="mode-box">
-    <h2><span class="dot"></span>주일예배 출석현황</h2>
-    <p>모드를 선택해 주세요</p>
+<div class="mode-select" id="modeOverlay">
+  <div class="mode-select-inner">
+    <h1><span class="dot"></span>주일예배 출석현황</h1>
+    <p class="mode-sub">Chicago Covenant Presbyterian Church</p>
     <div class="mode-buttons">
-      <button class="mode-btn-3d view" id="modeViewBtn">조회<br>모드</button>
-      <button class="mode-btn-3d admin" id="modeAdminBtn">관리자<br>모드</button>
+      <button class="mode-card view" id="modeViewBtn">
+        <span class="mode-icon">👁</span>
+        <span class="mode-title">조회 모드</span>
+        <span class="mode-desc">출석 현황 조회</span>
+      </button>
+      <button class="mode-card admin" id="modeAdminBtn">
+        <span class="mode-icon">🔑</span>
+        <span class="mode-title">관리자 모드</span>
+        <span class="mode-desc">교우부 전용</span>
+      </button>
     </div>
   </div>
 </div>
