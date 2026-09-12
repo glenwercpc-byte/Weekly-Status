@@ -21,6 +21,30 @@ body{
   color:var(--text);
   -webkit-tap-highlight-color:transparent;
 }
+
+/* 앱 진입 시 모드(조회/관리자)를 고르는 전체 화면 오버레이 */
+.mode-overlay{
+  position:fixed; inset:0; background:var(--navy);
+  display:flex; align-items:center; justify-content:center;
+  z-index:500; padding:20px;
+}
+.mode-box{
+  background:#fff; border-radius:14px; padding:36px 32px;
+  max-width:360px; width:100%; text-align:center;
+  box-shadow:0 12px 40px rgba(0,0,0,.35);
+}
+.mode-box h2{
+  margin:0 0 6px; font-size:18px; color:var(--navy);
+  display:flex; align-items:center; justify-content:center; gap:8px;
+}
+.mode-box h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--gold);}
+.mode-box p{margin:0 0 20px; font-size:13px; color:var(--muted);}
+.mode-btn{
+  display:block; width:100%; padding:12px 16px; font-size:14px;
+  margin-bottom:10px; border-radius:8px;
+}
+.mode-btn:last-child{margin-bottom:0;}
+
 .topbar{
   background:var(--navy);
   color:#fff;
