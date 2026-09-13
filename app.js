@@ -186,7 +186,7 @@ function setLookupLabel(msg) {
 
 function showCurrentDateLabel() {
   if (!state.date) return;
-  setLookupLabel(`${formatDateKoreanMD(state.date)} 출석 데이터입니다.`);
+  setLookupLabel(`${formatDateKoreanMD(state.date)} 출석 데이터입니다. (원하시는 날짜를 선택하시기 바랍니다)`);
 }
 
 function formatDateMDY(dateStr) {
